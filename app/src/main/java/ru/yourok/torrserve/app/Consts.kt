@@ -4,7 +4,7 @@ object Consts {
     private const val REL_HOST = "https://releases.yourok.ru/torr"
     const val AD_LINK = "$REL_HOST/ad"
     const val UPDATE_APK_PATH = "$REL_HOST/apk_release.json"
-    const val UPDATE_SERVER_PATH = "$REL_HOST/server_release.json"
+    const val UPDATE_SERVER_PATH = "https://raw.githubusercontent.com/9000000/TorrServer/master/release.json"
     val PLAYERS_BLACKLIST = hashSetOf(
         "com.android.gallery3d",
         "com.android.tv.frameworkpackagestubs",
