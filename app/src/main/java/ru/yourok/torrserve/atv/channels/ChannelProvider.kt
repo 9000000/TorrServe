@@ -19,6 +19,8 @@ import ru.yourok.torrserve.ui.activities.main.MainActivity
 import ru.yourok.torrserve.utils.Format
 import java.nio.charset.Charset
 import java.util.Locale
+import androidx.core.net.toUri
+import kotlin.math.min
 
 
 class ChannelProvider(private val iName: String, private val dName: String) {
@@ -32,7 +34,7 @@ class ChannelProvider(private val iName: String, private val dName: String) {
         builder.setType(TvContractCompat.Channels.TYPE_PREVIEW)
             .setDisplayName(dName)
             .setInternalProviderData(iName)
-            .setAppLinkIntentUri(Uri.parse("torrserve://${BuildConfig.APPLICATION_ID}/open_main_list"))
+            .setAppLinkIntentUri("torrserve://${BuildConfig.APPLICATION_ID}/open_main_list".toUri())
 
         val channelUri = App.context.contentResolver.insert(
             TvContractCompat.Channels.CONTENT_URI,
@@ -56,7 +58,7 @@ class ChannelProvider(private val iName: String, private val dName: String) {
         channel.setType(TvContractCompat.Channels.TYPE_PREVIEW)
             .setDisplayName(dName)
             .setInternalProviderData(iName)
-            .setAppLinkIntentUri(Uri.parse("torrserve://${BuildConfig.APPLICATION_ID}/open_main_list"))
+            .setAppLinkIntentUri("torrserve://${BuildConfig.APPLICATION_ID}/open_main_list".toUri())
             .build()
 
         App.context.contentResolver.update(
@@ -68,13 +70,13 @@ class ChannelProvider(private val iName: String, private val dName: String) {
             list.forEachIndexed { index, torrent ->
                 val prg = getProgram(channelId, torrent, list.size - index)
                 App.context.contentResolver.insert(
-                    Uri.parse("content://android.media.tv/preview_program"),
+                    "content://android.media.tv/preview_program".toUri(),
                     prg.toContentValues()
                 )
             }
         else
             App.context.contentResolver.insert(
-                Uri.parse("content://android.media.tv/preview_program"),
+                "content://android.media.tv/preview_program".toUri(),
                 emptyProgram(channelId).toContentValues()
             )
 
@@ -88,7 +90,8 @@ class ChannelProvider(private val iName: String, private val dName: String) {
     @SuppressLint("RestrictedApi")
     private val PROGRAMS_PROJECTION = arrayOf(
         TvContractCompat.PreviewPrograms._ID,
-        TvContractCompat.PreviewPrograms.COLUMN_SHORT_DESCRIPTION
+        TvContractCompat.PreviewPrograms.COLUMN_INTERNAL_PROVIDER_ID
+        // TvContractCompat.PreviewPrograms.COLUMN_SHORT_DESCRIPTION
     )
 
     @SuppressLint("RestrictedApi")
@@ -144,7 +147,7 @@ class ChannelProvider(private val iName: String, private val dName: String) {
     @SuppressLint("RestrictedApi")
     private fun getProgram(channelId: Long, torr: Torrent, size: Int): PreviewProgram {
         val info = mutableListOf<String>()
-        var posterUri = Uri.parse(torr.poster)
+        var posterUri = torr.poster?.toUri()
         if (posterUri.toString().isEmpty()) {
             val resourceId = R.drawable.emptyposter
             posterUri = Uri.Builder()
@@ -155,9 +158,10 @@ class ChannelProvider(private val iName: String, private val dName: String) {
                 .build()
         }
         val type = if (torr.category.equals("tv", true)) TvContractCompat.PreviewPrograms.TYPE_TV_SERIES else TvContractCompat.PreviewPrograms.TYPE_MOVIE
+        val title = torr.title.ifBlank { torr.name.ifBlank { torr.hash } }
         val preview = PreviewProgram.Builder()
             .setChannelId(channelId)
-            .setTitle(torr.title)
+            .setTitle(title)
             .setAvailability(TvContractCompat.PreviewProgramColumns.AVAILABILITY_AVAILABLE)
             .setGenre(info.joinToString(" · "))
             .setIntent(Utils.buildPendingIntent(torr))
@@ -230,17 +234,15 @@ class ChannelProvider(private val iName: String, private val dName: String) {
     }
 
     private fun buildDescription(torr: Torrent): String {
-        var retStr = ""
-        if (torr.title.isNotBlank())
-            retStr = torr.title
-        else if (torr.name.isNotBlank())
-            retStr = torr.name
-        else
-            retStr = torr.hash.uppercase(Locale.getDefault())
+        val sizeText = if (torr.torrent_size > 0) {
+            Format.byteFmt(torr.torrent_size)
+        } else null
 
-        if (torr.torrent_size > 0)
-            retStr += " • ${Format.byteFmt(torr.torrent_size)}"
+        val hashText = torr.hash.uppercase(Locale.getDefault()).let { hash ->
+            if (hash.length > 6) "${hash.substring(0, 4)}..${hash.substring(hash.length - 2)}"
+            else hash
+        }.takeIf { it.isNotEmpty() }
 
-        return retStr
+        return listOfNotNull(sizeText, hashText).joinToString(" • ")
     }
 }
