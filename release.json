@@ -1,7 +1,7 @@
 {
   "Name": "TorrServe",
-  "Version": "MatriX.141.Client",
-  "VersionCode": "140",
-  "BuildDate": "01.03.2026",
-  "Link": "https://github.com/9000000/TorrServe/releases/download/MatriX.140.Client/TorrServe_MatriX.141.Client-release.apk"
+  "Version": "MatriX.145.Client",
+  "VersionCode": 145,
+  "BuildDate": "04.10.2026",
+  "Link": "https://github.com/9000000/TorrServe/releases/download/MatriX.145.Client/TorrServe_MatriX.145.Client-release.apk"
 }

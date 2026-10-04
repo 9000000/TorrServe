@@ -213,6 +213,54 @@ def git_tag_and_push(tag: str, branch: str):
             print_warn(f"Cảnh báo khi đẩy tag: {res.stderr.strip()}")
 
 
+def update_release_metadata_files(version_name: str, version_code: int, tag: str, owner: str, repo: str, notes: str):
+    import datetime
+    today_str = datetime.date.today().strftime("%d.%m.%Y")
+    download_url = f"https://github.com/{owner}/{repo}/releases/download/{tag}/TorrServe_{version_name}-release.apk"
+
+    # 1. Update apk_release.json
+    apk_rel_file = ROOT / "apk_release.json"
+    apk_list = []
+    if apk_rel_file.exists():
+        try:
+            apk_list = json.loads(apk_rel_file.read_text(encoding="utf-8"))
+            if not isinstance(apk_list, list):
+                apk_list = []
+        except Exception:
+            apk_list = []
+
+    # Remove existing entry if same version/versionCode
+    apk_list = [item for item in apk_list if item.get("version") != version_name and item.get("versionInt") != version_code]
+
+    new_apk_item = {
+        "version": version_name,
+        "versionInt": version_code,
+        "link": download_url,
+        "desc": notes.strip()
+    }
+    apk_list.insert(0, new_apk_item)
+    try:
+        apk_rel_file.write_text(json.dumps(apk_list, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        print_success("Đã tự động cập nhật file apk_release.json")
+    except Exception as e:
+        print_warn(f"Không thể cập nhật apk_release.json: {e}")
+
+    # 2. Update release.json
+    rel_file = ROOT / "release.json"
+    new_rel_data = {
+        "Name": "TorrServe",
+        "Version": version_name,
+        "VersionCode": version_code,
+        "BuildDate": today_str,
+        "Link": download_url
+    }
+    try:
+        rel_file.write_text(json.dumps(new_rel_data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        print_success("Đã tự động cập nhật file release.json")
+    except Exception as e:
+        print_warn(f"Không thể cập nhật release.json: {e}")
+
+
 def upload_to_github_release(token: str, owner: str, repo: str, branch: str, tag: str, title: str, notes: str, apk_path: Path, prerelease=False):
     print_step("4/4", f"Tạo GitHub Release và tải lên file APK ({owner}/{repo})...")
 
@@ -344,16 +392,19 @@ def main():
     # 2. Chuẩn bị APK
     apk_path = prepare_apk(version_name)
 
-    # 3. Tạo Git tag và đẩy lên git remote
-    git_tag_and_push(tag, branch)
-
-    # 4. Ghi chú phát hành
+    # 3. Ghi chú phát hành
     notes = args.notes
     if not notes:
         recent_log = get_recent_commits(5)
         notes = f"## TorrServe {version_name}\n\n### Thay đổi:\n{recent_log}\n"
 
-    # 5. Đẩy Release lên GitHub
+    # 4. Tự động cập nhật file thông tin update (apk_release.json & release.json)
+    update_release_metadata_files(version_name, version_code, tag, owner, repo, notes)
+
+    # 5. Tạo Git tag và đẩy lên git remote
+    git_tag_and_push(tag, branch)
+
+    # 6. Đẩy Release lên GitHub
     upload_to_github_release(
         token=token,
         owner=owner,

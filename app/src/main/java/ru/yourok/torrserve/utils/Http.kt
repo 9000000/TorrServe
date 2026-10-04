@@ -33,11 +33,7 @@ class Http(url: Uri) {
 
     private var timeout = 30000
 
-    fun connect() {
-        connect(0)
-    }
-
-    private fun connect(pos: Long): Long {
+    fun connect(pos: Long = 0): Long {
 
         var responseCode: Int
         var redirCount = 0
@@ -47,33 +43,39 @@ class Http(url: Uri) {
 
             val url = URL(currUrl)
 
-            connection = if (currUrl.startsWith("https"))
-                NetCipher.getHttpsURLConnection(url)
-                    .also {
-                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
-                            val trustAllHostnames = HostnameVerifier { _, _ ->
-                                true // Just allow them all
-                            }
-                            HttpsURLConnection.setDefaultHostnameVerifier(trustAllHostnames)
-                        }
-                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-                            try {
-                                // Only TLSv1.2 and TLSv1.3 protocol available and trust all certs (insecure).
-                                HttpsURLConnection.setDefaultSSLSocketFactory(TlsSocketFactory())
-                            } catch (_: GeneralSecurityException) {
-                            }
-                        }
+            connection = if (currUrl.startsWith("https")) {
+                val conn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    url.openConnection() as HttpsURLConnection
+                } else {
+                    NetCipher.getHttpsURLConnection(url)
+                }
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+                    val trustAllHostnames = HostnameVerifier { _, _ ->
+                        true // Just allow them all
                     }
-            else
-                NetCipher.getHttpURLConnection(url)
+                    conn.hostnameVerifier = trustAllHostnames
+                }
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                    try {
+                        // Only TLSv1.2 and TLSv1.3 protocol available and trust all certs (insecure).
+                        conn.sslSocketFactory = TlsSocketFactory()
+                    } catch (_: GeneralSecurityException) {
+                    }
+                }
+                conn
+            } else {
+                url.openConnection() as HttpURLConnection
+            }
+
             connection!!.connectTimeout = timeout
-            connection!!.readTimeout = 15000
+            connection!!.readTimeout = 60000
             connection!!.requestMethod = "GET"
             connection!!.doInput = true
 
-            connection!!.setRequestProperty("UserAgent", "DWL/1.1.0 (Linux; Android;)")
+            connection!!.setRequestProperty("User-Agent", "DWL/1.1.0 (Linux; Android)")
+            connection!!.setRequestProperty("UserAgent", "DWL/1.1.0 (Linux; Android)")
             connection!!.setRequestProperty("Accept", "*/*")
-            connection!!.setRequestProperty("Accept-Encoding", "gzip")
+            connection!!.setRequestProperty("Accept-Encoding", "identity")
             if (pos > 0)
                 connection!!.setRequestProperty("Range", "bytes=$pos-")
 
@@ -83,10 +85,17 @@ class Http(url: Uri) {
             connection!!.connect()
 
             responseCode = connection!!.responseCode
-            var redirected =
-                responseCode == HTTP_MOVED_PERM || responseCode == HTTP_MOVED_TEMP || responseCode == HTTP_SEE_OTHER
+            val redirected =
+                responseCode == HTTP_MOVED_PERM || responseCode == HTTP_MOVED_TEMP || responseCode == HTTP_SEE_OTHER || responseCode == 307 || responseCode == 308
             if (redirected) {
-                currUrl = connection!!.getHeaderField("Location")
+                val loc = connection!!.getHeaderField("Location")
+                if (!loc.isNullOrBlank()) {
+                    currUrl = try {
+                        URL(URL(currUrl), loc).toString()
+                    } catch (_: Exception) {
+                        loc
+                    }
+                }
                 connection!!.disconnect()
                 redirCount++
             }
@@ -96,7 +105,6 @@ class Http(url: Uri) {
                 if (retry.isNullOrEmpty() || retry == "0")
                     retry = "1"
                 redirCount++
-                redirected = true
                 Thread.sleep(retry.toLong() * 1000L)
             }
 
@@ -107,7 +115,7 @@ class Http(url: Uri) {
 
 
         if (responseCode != HTTP_OK && responseCode != HTTP_PARTIAL) {
-            throw IOException("Error connect to: " + currUrl + " " + connection!!.responseMessage)
+            throw IOException("Error connect to: " + currUrl + " (" + responseCode + " " + connection!!.responseMessage + ")")
         }
         isConn = true
         if (connection!!.getHeaderField("Accept-Ranges")?.lowercase(Locale.getDefault()) == "none")

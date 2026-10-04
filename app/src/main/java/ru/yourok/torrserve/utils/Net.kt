@@ -16,8 +16,8 @@ import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.HttpsURLConnection
 
 object Net {
-    private const val timeout = 5000 // total request timeout duration, in ms
-    private val userAgent = "TorrServe/${App.context.packageManager.getPackageInfo(App.context.packageName, 0).versionName} (Android ${Build.VERSION.RELEASE}; ${Build.MODEL})"
+    private const val timeout = 15000 // total request timeout duration, in ms
+    private val userAgent = "TorrServe/${try { App.context.packageManager.getPackageInfo(App.context.packageName, 0).versionName } catch (_: Exception) { "1.0" }} (Android ${Build.VERSION.RELEASE}; ${Build.MODEL})"
 
     fun getHostUrl(path: String): String {
         val url = Settings.getHost()
@@ -130,8 +130,10 @@ object Net {
             HttpsURLConnection.setDefaultHostnameVerifier(trustAllHostnames)
         }
         val conn = Jsoup.connect(url)
+            .userAgent(userAgent)
             .ignoreHttpErrors(true)
             .ignoreContentType(true)
+            .followRedirects(true)
             .timeout(duration)
         if (!isBrokenTCL)
             conn.sslSocketFactory(TlsSocketFactory())
@@ -143,12 +145,12 @@ object Net {
                 response.body()
             }
 
-            302 -> {
-                ""
-            }
-
             else -> {
-                throw Exception(response.statusMessage())
+                if (response.statusCode() in 200..299) {
+                    response.body()
+                } else {
+                    throw Exception("HTTP ${response.statusCode()}: ${response.statusMessage()}")
+                }
             }
         }
     }

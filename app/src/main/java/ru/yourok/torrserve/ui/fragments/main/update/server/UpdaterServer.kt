@@ -40,54 +40,90 @@ object UpdaterServer {
         return lv
     }
 
-    fun updateFromNet(onProgress: ((prc: Int) -> Unit)?) {
-        val url = getLink()
-        if (url.isNotBlank()) {
-            val http = Http(Uri.parse(url))
-            http.connect()
-            if (TorrService.isLocal() && Api.echo().isNotEmpty()) {
-//                if (Accessibility.isEnabledService(App.context))
-//                    Accessibility.enableService(App.context, false)
-                TorrService.stop()
-                ServerFile().stop()
-            }
-            http.getInputStream().also { content ->
-                content ?: throw IOException("error connect server, url: $url")
+    private fun downloadFileWithResume(downloadUrl: String, destination: File, onProgress: ((prc: Int) -> Unit)?) {
+        val http = Http(Uri.parse(downloadUrl))
+        val currentSize = if (destination.exists()) destination.length() else 0L
 
-                val serverFile = ServerFile()
-                val updateFile = File(App.context.filesDir, "torrserver_update")
-                val contentLength = http.getSize()
+        val totalExpected = try {
+            http.connect(currentSize)
+        } catch (_: Exception) {
+            if (destination.exists()) destination.delete()
+            val freshHttp = Http(Uri.parse(downloadUrl))
+            freshHttp.connect(0)
+        }
 
-                FileOutputStream(updateFile).use { fileOut ->
-                    if (onProgress == null)
-                        content.copyTo(fileOut)
-                    else {
-                        val buffer = ByteArray(65535)
-                        val length = contentLength + 1
-                        var offset: Long = 0
-                        while (true) {
-                            val readed = content.read(buffer)
-                            offset += readed
-                            val prc = (offset * 100 / length).toInt()
-                            onProgress(prc)
-                            if (readed <= 0) break
-                            fileOut.write(buffer, 0, readed)
-                        }
-                        fileOut.flush()
+        val append = destination.exists() && currentSize > 0 && destination.length() == currentSize
+        val startOffset = if (append) currentSize else 0L
+        val fullLength = if (totalExpected > 0) (startOffset + totalExpected) else 0L
+
+        http.getInputStream().also { content ->
+            content ?: throw IOException("error connect server, url: $downloadUrl")
+
+            FileOutputStream(destination, append).use { fileOut ->
+                val buffer = ByteArray(65535)
+                var offset = startOffset
+                while (true) {
+                    val readed = content.read(buffer)
+                    if (readed <= 0) break
+                    offset += readed
+                    if (fullLength > 0 && onProgress != null) {
+                        val prc = (offset * 100 / fullLength).toInt().coerceIn(0, 100)
+                        onProgress(prc)
                     }
-                    fileOut.flush()
-                    fileOut.close()
+                    fileOut.write(buffer, 0, readed)
+                }
+                fileOut.flush()
+            }
+        }
+        http.close()
+    }
+
+    fun updateFromNet(onProgress: ((prc: Int) -> Unit)?) {
+        val originalUrl = getLink()
+        if (originalUrl.isBlank()) {
+            throw IOException(App.context.getString(R.string.warn_error_download_server) + " (No link for arch ${getArch()})")
+        }
+
+        val candidateUrls = mutableListOf(originalUrl)
+        if (originalUrl.contains("github.com", ignoreCase = true)) {
+            candidateUrls.add("https://ghproxy.net/$originalUrl")
+            candidateUrls.add("https://mirror.ghproxy.com/$originalUrl")
+        }
+
+        val serverFile = ServerFile()
+        val updateFile = File(App.context.filesDir, "torrserver_update")
+        var lastException: Exception? = null
+
+        for (url in candidateUrls) {
+            try {
+                downloadFileWithResume(url, updateFile, onProgress)
+                if (updateFile.exists() && updateFile.length() > 0) {
+                    if (TorrService.isLocal() && Api.echo().isNotEmpty()) {
+                        TorrService.stop()
+                        ServerFile().stop()
+                    }
+                    if (serverFile.exists()) serverFile.delete()
                     if (!updateFile.renameTo(serverFile)) {
+                        updateFile.copyTo(serverFile, overwrite = true)
                         updateFile.delete()
-                        throw IOException("error write torrserver update")
                     }
                     if (!serverFile.setExecutable(true)) {
                         serverFile.delete()
                         throw IOException("error set exec permission")
                     }
+                    lastException = null
+                    break
                 }
+            } catch (e: Exception) {
+                lastException = e
             }
         }
+
+        if (lastException != null) {
+            updateFile.delete()
+            throw lastException
+        }
+
         if (TorrService.isLocal()) {
             TorrService.start()
         }
@@ -153,16 +189,59 @@ object UpdaterServer {
     }
 
     fun check(): Boolean {
-        return try {
-            val body = Net.get(Consts.UPDATE_SERVER_PATH)
-            val gson = Gson()
-            version = gson.fromJson(body, ServVersion::class.java)
-            true
-        } catch (e: Exception) {
-            error = e.message ?: App.context.getString(R.string.warn_error_check_ver)
-            App.toast(error)
-            false
+        val urls = listOf(
+            Consts.UPDATE_SERVER_PATH,
+            Consts.UPDATE_SERVER_PATH_CDN
+        )
+        val gson = Gson()
+        for (url in urls) {
+            try {
+                val body = Net.get(url, 15000).trim()
+                if (body.isNotEmpty() && body.startsWith("{")) {
+                    val parsed = gson.fromJson(body, ServVersion::class.java)
+                    if (parsed != null && parsed.links.isNotEmpty()) {
+                        version = parsed
+                        return true
+                    }
+                }
+            } catch (_: Exception) {
+                // Try next mirror
+            }
         }
+
+        // Fallback to GitHub Releases API if raw/cdn release.json fails
+        try {
+            val apiUrl = "https://api.github.com/repos/9000000/TorrServer-LT/releases"
+            val body = Net.get(apiUrl, 15000).trim()
+            if (body.startsWith("[")) {
+                val releases = gson.fromJson(body, com.google.gson.JsonArray::class.java)
+                if (releases != null && releases.size() > 0) {
+                    val firstRel = releases.get(0).asJsonObject
+                    val tagName = firstRel.get("tag_name")?.asString ?: ""
+                    val assets = firstRel.getAsJsonArray("assets")
+                    if (tagName.isNotEmpty() && assets != null) {
+                        val links = mutableMapOf<String, String>()
+                        for (element in assets) {
+                            val assetObj = element.asJsonObject
+                            val name = assetObj.get("name")?.asString ?: ""
+                            val downloadUrl = assetObj.get("browser_download_url")?.asString ?: ""
+                            if (name.startsWith("TorrServer-LT-") && downloadUrl.isNotEmpty()) {
+                                val key = name.removePrefix("TorrServer-LT-")
+                                links[key] = downloadUrl
+                            }
+                        }
+                        if (links.isNotEmpty()) {
+                            version = ServVersion(tagName, links)
+                            return true
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {
+        }
+
+        error = App.context.getString(R.string.warn_error_check_ver)
+        return false
     }
 
     @RequiresApi(Build.VERSION_CODES.KITKAT)
