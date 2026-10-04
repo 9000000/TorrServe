@@ -20,8 +20,33 @@ android {
         // Use SupportLibrary for vectors
         vectorDrawables.useSupportLibrary = true
     }
+    signingConfigs {
+        release {
+            def keystorePropsFile = rootProject.file("keystore.properties")
+            def localPropsFile = rootProject.file("local.properties")
+            def props = new Properties()
+            if (keystorePropsFile.exists()) {
+                props.load(new FileInputStream(keystorePropsFile))
+            } else if (localPropsFile.exists()) {
+                props.load(new FileInputStream(localPropsFile))
+            }
+            def storeFilePath = props.getProperty("RELEASE_STORE_FILE") ?: props.getProperty("storeFile")
+            if (storeFilePath) {
+                def kFile = rootProject.file(storeFilePath)
+                if (kFile.exists()) {
+                    storeFile kFile
+                    storePassword props.getProperty("RELEASE_STORE_PASSWORD") ?: props.getProperty("storePassword")
+                    keyAlias props.getProperty("RELEASE_KEY_ALIAS") ?: props.getProperty("keyAlias")
+                    keyPassword props.getProperty("RELEASE_KEY_PASSWORD") ?: props.getProperty("keyPassword")
+                }
+            }
+        }
+    }
     buildTypes {
         release {
+            if (signingConfigs.release.storeFile != null && signingConfigs.release.storeFile.exists()) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }

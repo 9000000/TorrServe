@@ -13,3 +13,11 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Local Keystores & Signing configs (Local only)
+*.jks
+*.keystore
+!keystore/debug.jks
+!keystore/freekeys.jks
+keystore/release.jks
+keystore.properties
