@@ -43,12 +43,18 @@
     <string name="remove_cache_on_drop_desc">如果禁用,缓存将在从数据库删除种子时移除</string>
     <string name="force_encrypt">强制加密标头</string>
     <string name="force_encrypt_desc">可以帮助解决服务提供商封锁种子的问题</string>
+    <string name="enable_lpd">LPD (Local Peer Discovery)</string>
+    <string name="enable_lpd_desc">LPD 允许连接到同一家庭网络的设备相互识别，并直接共享种子文件</string>
+    <string name="lpd_ipv6">LPD IPv6</string>
+    <string name="lpd_ipv6_desc">仅在ISP支持时启用</string>
     <string name="enable_ipv6">IPv6</string>
     <string name="enable_ipv6_desc">仅在 ISP 支持时启用</string>
     <string name="enable_debug">启用 TorrServer 调试日志</string>
     <string name="enable_responsive_mode">启用响应式阅读器模式</string>
     <string name="show_only_active_torrents_fs">仅在文件系统中显示活动种子</string>
     <string name="enable_dlna">DLNA 媒体服务器</string>
+    <string name="enable_bonjour">Bonjour (mDNS)</string>
+    <string name="enable_bonjour_desc">在局域网上广播以便发现 (mDNS)</string>
     <string name="dlna_friendly_name">DLNA 服务器名称</string>
     <string name="dlna_name_hint">留空以使用默认名称</string>
     <string name="disable_tcp">TCP - 传输控制协议</string>
@@ -85,6 +91,9 @@
     <string name="use_as_default">保存为默认</string>
     <string name="default_player">系统默认播放器</string>
     <string name="choose_player">总是询问</string>
+    <string name="kodi_playlist_title">Kodi 播放列表支持</string>
+    <string name="kodi_playlist_sum_on">Kodi 22+ 播放列表支持已启用</string>
+    <string name="kodi_playlist_sum_off">Kodi 22+ 播放列表支持已禁用</string>
     <string name="player_pref_key" translatable="false">player</string>
 
     <string name="app_theme_title">应用主题</string>
@@ -289,15 +298,21 @@
     <string name="not_used">未使用</string>
     <string name="not_installed">未安装</string>
 
+    <string name="categories">分类</string>
     <string name="cat_movie">电影</string>
     <string name="cat_tv">电视剧</string>
     <string name="cat_music">音乐</string>
     <string name="cat_other">其他</string>
-    <string name="cat_none">所有种子</string>
+    <string name="cat_none">未分类</string>
+    <string name="cat_all">所有种子</string>
 
     <string name="accessibility_note">禁用无障碍服务以停止 TorrServer</string>
     <string name="torrserver_log">TorrServer 日志</string>
     <string name="torrserver_log_summary">查看本地 TorrServer 日志</string>
     <string name="torrserver_log_cleared">TorrServer 日志已清除</string>
     <string name="torrserver_log_trimmed">日志内容已截断（显示最后%s）</string>
+
+    <string name="switch_disable_accessibility_on_server_switch_title">在服务器切换时禁用辅助功能服务</string>
+    <string name="switch_disable_accessibility_on_server_switch_summary_on">从本地服务器切换到远程服务器时，辅助功能服务将被禁用</string>
+    <string name="switch_disable_accessibility_on_server_switch_summary_off">从本地服务器切换到远程服务器时，辅助功能服务不会被禁用</string>
 </resources>
