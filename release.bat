@@ -109,8 +109,8 @@ def get_git_info():
 
 
 def read_app_version():
-    version_name = "MatriX.143.Client"
-    version_code = 143
+    version_name = "MatriX.145.Client"
+    version_code = 145
     if BUILD_GRADLE.exists():
         try:
             content = BUILD_GRADLE.read_text(encoding="utf-8")
