@@ -52,7 +52,7 @@
                 android:minWidth="160dp"
                 android:textColor="?android:attr/textColorPrimary"
                 android:textSize="16sp"
-                tools:text="arm7" />
+                tools:text="armv7" />
         </com.google.android.flexbox.FlexboxLayout>
 
         <com.google.android.flexbox.FlexboxLayout

@@ -118,18 +118,36 @@ object UpdaterServer {
         }
     }
 
+    private fun normalizeArch(raw: String?): String {
+        if (raw.isNullOrBlank()) return ""
+        val abi = raw.trim().lowercase()
+        return when {
+            abi.contains("arm64") || abi.contains("aarch64") || abi.contains("armv8") -> "arm64"
+            abi.contains("x86_64") || abi.contains("amd64") || abi == "x64" -> "amd64"
+            abi.contains("x86") || abi.contains("i386") || abi.contains("i686") || abi == "386" -> "386"
+            abi.contains("v7") || abi.contains("arm7") || abi.startsWith("armeabi") || abi.startsWith("arm") -> "armv7"
+            else -> ""
+        }
+    }
+
     @Suppress("DEPRECATION")
     fun getArch(): String {
-        val arch = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP)
-            Build.SUPPORTED_ABIS[0]
-        else
-            Build.CPU_ABI
+        val candidates = mutableListOf<String>()
 
-        when (arch) {
-            "arm64-v8a" -> return "arm64"
-            "armeabi-v7a" -> return "arm7"
-            "x86_64" -> return "amd64"
-            "x86" -> return "386"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            Build.SUPPORTED_ABIS?.let { candidates.addAll(it) }
+        }
+        if (!Build.CPU_ABI.isNullOrBlank()) candidates.add(Build.CPU_ABI)
+        if (!Build.CPU_ABI2.isNullOrBlank()) candidates.add(Build.CPU_ABI2)
+        System.getProperty("os.arch")?.let {
+            if (it.isNotBlank()) candidates.add(it)
+        }
+
+        for (abi in candidates) {
+            val arch = normalizeArch(abi)
+            if (arch.isNotEmpty()) {
+                return arch
+            }
         }
         return ""
     }
@@ -158,7 +176,7 @@ object UpdaterServer {
         val arch = getArch()
         var link = ""
         when (arch) {
-            "arm7" -> link = "https://github.com/ffbinaries/ffbinaries-prebuilt/releases/download/v4.4.1/ffprobe-4.4.1-linux-armhf-32.zip"
+            "arm7", "armv7" -> link = "https://github.com/ffbinaries/ffbinaries-prebuilt/releases/download/v4.4.1/ffprobe-4.4.1-linux-armhf-32.zip"
             "arm64" -> link = "https://github.com/ffbinaries/ffbinaries-prebuilt/releases/download/v4.4.1/ffprobe-4.4.1-linux-arm-64.zip"
             "386" -> link = "https://github.com/ffbinaries/ffbinaries-prebuilt/releases/download/v4.4.1/ffprobe-4.4.1-linux-32.zip"
             "amd64" -> link = "https://github.com/ffbinaries/ffbinaries-prebuilt/releases/download/v4.4.1/ffprobe-4.4.1-linux-64.zip"
@@ -231,8 +249,54 @@ object UpdaterServer {
             val arch = getArch()
             if (arch.isEmpty())
                 throw IOException("error get arch")
-            return if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) ver.links["linux-$arch"] ?: ""
-            else ver.links["android-$arch"] ?: ""
+
+            val isOldAndroid = Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP
+            val primaryPrefix = if (isOldAndroid) "linux" else "android"
+            val fallbackPrefix = if (isOldAndroid) "android" else "linux"
+
+            val keyCandidates = mutableListOf<String>()
+
+            fun addArchKeys(prefix: String) {
+                when (arch) {
+                    "armv7", "arm7", "arm" -> {
+                        keyCandidates.add("$prefix-armv7")
+                        keyCandidates.add("$prefix-arm7")
+                        keyCandidates.add("$prefix-arm")
+                        keyCandidates.add("$prefix-armeabi-v7a")
+                    }
+                    "arm64" -> {
+                        keyCandidates.add("$prefix-arm64")
+                        keyCandidates.add("$prefix-arm64-v8a")
+                        keyCandidates.add("$prefix-aarch64")
+                    }
+                    "amd64" -> {
+                        keyCandidates.add("$prefix-amd64")
+                        keyCandidates.add("$prefix-x86_64")
+                    }
+                    "386" -> {
+                        keyCandidates.add("$prefix-386")
+                        keyCandidates.add("$prefix-x86")
+                    }
+                    else -> keyCandidates.add("$prefix-$arch")
+                }
+            }
+
+            addArchKeys(primaryPrefix)
+            addArchKeys(fallbackPrefix)
+
+            for (key in keyCandidates) {
+                val url = ver.links[key]
+                if (!url.isNullOrBlank()) {
+                    return url
+                }
+            }
+
+            for (key in keyCandidates) {
+                val found = ver.links.entries.firstOrNull { it.key.equals(key, ignoreCase = true) }?.value
+                if (!found.isNullOrBlank()) {
+                    return found
+                }
+            }
         }
         return ""
     }
