@@ -49,6 +49,9 @@ class TorrentsFragment : TSFragment() {
                 torr.category?.let { if (it.isNotBlank()) intent.putExtra("category", it) }
                 intent.putExtra("poster", torr.poster)
                 intent.putExtra("action", "play")
+                intent.putExtra("save", true)
+                intent.putExtra("from_list", true)
+                intent.putExtra("dont_drop", true)
                 App.context.startActivity(intent)
             }
             lvTorrents.choiceMode = ListView.CHOICE_MODE_MULTIPLE_MODAL

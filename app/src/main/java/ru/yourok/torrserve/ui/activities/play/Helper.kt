@@ -27,19 +27,30 @@ fun PlayActivity.readArgs() {
     intent?.extras?.apply {
         keySet().forEach { key ->
             when (key.lowercase(Locale.getDefault())) {
-                "hash" -> torrentHash = this.getString(key) ?: ""
+                "hash" -> {
+                    torrentHash = this.getString(key) ?: ""
+                    if (torrentHash.isNotBlank())
+                        isExistingTorrent = true
+                }
                 "title" -> torrentTitle = this.getString(key) ?: ""
                 "poster" -> torrentPoster = this.getString(key) ?: ""
                 "category" -> torrentCategory = this.getString(key) ?: ""
                 "data" -> torrentData = this.getString(key) ?: ""
                 "fileindex" -> torrentFileIndex = this.getInt(key, -1)
                 "save" -> torrentSave = this.getBoolean(key)
+                "from_list" -> fromList = this.getBoolean(key)
+                "dont_drop" -> dontDrop = this.getBoolean(key)
             }
         }
+    }
+    if (fromList || isExistingTorrent) {
+        torrentSave = true
+        dontDrop = true
     }
 }
 
 fun PlayActivity.successful(intent: Intent) {
+    dropOnClose = false
     setResult(AppCompatActivity.RESULT_OK, intent)
     finish()
 }
@@ -58,6 +69,8 @@ fun PlayActivity.error(err: ReturnError) {
 }
 
 fun PlayActivity.addAndExit() {
+    dropOnClose = false
+    torrentSave = true
     lifecycleScope.launch(Dispatchers.IO) {
         try {
             addTorrent(torrentHash, torrentLink, torrentTitle, torrentPoster, torrentCategory, torrentData, true)

@@ -3,7 +3,7 @@
     "version": "MatriX.145.Client",
     "versionInt": 145,
     "link": "https://github.com/9000000/TorrServe/releases/download/MatriX.145.Client/TorrServe_MatriX.145.Client-release.apk",
-    "desc": "## TorrServe MatriX.145.Client\n\n### Thay đổi:\n- chore: ignore local log.txt file in gitignore\n- chore: release MatriX.145.Client\n- feat: implement server updater logic and layout for updating TorrServer binaries\n- chore: release MatriX.143.Client\n- MatriX.143.Client"
+    "desc": "## TorrServe MatriX.145.Client\n\n### Thay đổi:\n- chore: release MatriX.145.Client\n- chore: ignore local log.txt file in gitignore\n- chore: release MatriX.145.Client\n- feat: implement server updater logic and layout for updating TorrServer binaries\n- chore: release MatriX.143.Client"
   },
   {
     "version": "MatriX.143.Client",

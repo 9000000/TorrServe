@@ -34,8 +34,16 @@ object Play {
                         return@launch
                     }
                 infoFragment.startInfo(torr.hash)
-                if (torrentHash.isEmpty() && torr.hash.isNotBlank()) // store hash for Api.dropTorrent on close
+                if (torr.stat == TorrentHelper.T_STATE_INDB) {
+                    torrentSave = true
+                    isExistingTorrent = true
+                    dropOnClose = false
+                }
+                if (torrentHash.isEmpty() && torr.hash.isNotBlank()) {
                     torrentHash = torr.hash
+                    if (!torrentSave && !fromList && !isExistingTorrent && !dontDrop)
+                        dropOnClose = true
+                }
                 torrent = TorrentHelper.waitFiles(torr.hash) ?: let {
                     error(ErrLoadTorrentInfo)
                     return@launch

@@ -43,6 +43,11 @@ class PlayActivity : AppCompatActivity() {
     var torrentSave: Boolean = false
     var torrentFileIndex: Int = -1
 
+    var isExistingTorrent: Boolean = false
+    var fromList: Boolean = false
+    var dontDrop: Boolean = false
+    var dropOnClose: Boolean = false
+
     private var userClose = false
 
     var ad: AD? = null
@@ -135,7 +140,7 @@ class PlayActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        if (userClose) {
+        if (userClose && dropOnClose && !torrentSave && !fromList && !isExistingTorrent && !dontDrop) {
             if (torrentHash.isNotEmpty())
                 thread {
                     try {
@@ -169,7 +174,7 @@ class PlayActivity : AppCompatActivity() {
         ad?.get()
         //// Play torrent
         if (intent.hasExtra("action") && intent.getStringExtra("action") == "play")
-            play(false)
+            play(torrentSave || fromList || isExistingTorrent)
         else {
             lifecycleScope.launch { hideProgress() }
             if (App.inForeground) {
