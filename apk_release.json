@@ -1,5 +1,11 @@
 [
   {
+    "version": "MatriX.146.2.Client",
+    "versionInt": 148,
+    "link": "https://github.com/9000000/TorrServe/releases/download/MatriX.146.2.Client/TorrServe_MatriX.146.2.Client-release.apk",
+    "desc": "## TorrServe MatriX.146.2.Client\n\n### Thay đổi:\n- fix: prevent false positive update notifications when current version is installed\n- chore: auto increment versionCode only when versionName changes\n- chore: remove auto git commit and push in release.bat\n- chore: release MatriX.146.Client\n- chore: release MatriX.146.Client"
+  },
+  {
     "version": "MatriX.146.1.Client",
     "versionInt": 147,
     "link": "https://github.com/9000000/TorrServe/releases/download/MatriX.146.1.Client/TorrServe_MatriX.146.1.Client-release.apk",
