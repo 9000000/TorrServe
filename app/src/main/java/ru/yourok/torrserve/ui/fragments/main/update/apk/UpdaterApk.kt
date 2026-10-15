@@ -27,6 +27,24 @@ object UpdaterApk {
         return match?.value?.toIntOrNull() ?: 0
     }
 
+    private fun isNewerVersion(remoteVersion: String, remoteCode: Int): Boolean {
+        val currentName = BuildConfig.VERSION_NAME.trim()
+        val currentCode = BuildConfig.VERSION_CODE
+        val rName = remoteVersion.trim()
+
+        // Nếu trùng versionName (ví dụ máy đã cài MatriX.146.1.Client) -> Chắc chắn không có cập nhật
+        if (rName.equals(currentName, ignoreCase = true)) {
+            return false
+        }
+
+        // Nếu remoteCode lớn hơn currentCode và tên phiên bản khác nhau
+        if (remoteCode > currentCode) {
+            return true
+        }
+
+        return false
+    }
+
     fun check(): Boolean {
         val urls = listOf(
             Consts.UPDATE_APK_PATH,
@@ -46,7 +64,7 @@ object UpdaterApk {
                         versions = list
                         for (ver in list) {
                             val code = if (ver.versionInt > 0) ver.versionInt else extractVersionCode(ver.version)
-                            if (code > BuildConfig.VERSION_CODE) {
+                            if (isNewerVersion(ver.version, code)) {
                                 newVersion = ver.copy(versionInt = code)
                                 return true
                             }
@@ -59,7 +77,7 @@ object UpdaterApk {
                         val code = if (single.versionInt > 0) single.versionInt else extractVersionCode(single.version)
                         val list = ApkVersions().apply { add(single.copy(versionInt = code)) }
                         versions = list
-                        if (code > BuildConfig.VERSION_CODE) {
+                        if (isNewerVersion(single.version, code)) {
                             newVersion = single.copy(versionInt = code)
                             return true
                         }
@@ -102,7 +120,7 @@ object UpdaterApk {
                 if (list.isNotEmpty()) {
                     versions = list
                     for (ver in list) {
-                        if (ver.versionInt > BuildConfig.VERSION_CODE) {
+                        if (isNewerVersion(ver.version, ver.versionInt)) {
                             newVersion = ver
                             return true
                         }

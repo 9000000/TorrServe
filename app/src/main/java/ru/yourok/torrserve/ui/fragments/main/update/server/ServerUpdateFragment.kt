@@ -47,7 +47,7 @@ class ServerUpdateFragment : TSFragment() {
                                 showProgress(it)
                             }
                         }
-                        delay(1000)
+                        TorrService.wait(5)
                         updateUI()
                         hideProgress()
                         withContext(Dispatchers.Main) {

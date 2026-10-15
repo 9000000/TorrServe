@@ -546,6 +546,30 @@ object UpdaterServer {
         }
     }
 
+    fun isSameServerVersion(remoteVer: String, localVer: String): Boolean {
+        if (remoteVer.isBlank() || localVer.isBlank()) return false
+        fun clean(v: String): String {
+            var s = v.trim()
+            val prefixes = listOf("TorrServer-LT-", "TorrServer-", "torrserver-lt-", "torrserver-", "TorrServer ", "torrserver ", "v", "V")
+            for (p in prefixes) {
+                if (s.startsWith(p)) {
+                    s = s.substring(p.length)
+                    break
+                }
+            }
+            return s.trim()
+        }
+        val r = clean(remoteVer)
+        val l = clean(localVer)
+        if (r.isEmpty() || l.isEmpty()) return false
+        if (r.equals(l, ignoreCase = true)) return true
+
+        // Nếu local và remote trùng nhau phần phiên bản chính (vd MatriX.146 và MatriX.146.3)
+        if (r.startsWith(l, ignoreCase = true) || l.startsWith(r, ignoreCase = true)) return true
+
+        return false
+    }
+
     fun getRemoteVersion(): String {
         var rv = App.context.getString(R.string.no_updates)
         if (version == null)
@@ -555,7 +579,8 @@ object UpdaterServer {
                 getLocalVersion()
             }
             version?.let {
-                if (it.version != lv.await())
+                val local = lv.await().trim()
+                if (local.isNotEmpty() && !isSameServerVersion(it.version, local))
                     rv = it.version
             }
         }
