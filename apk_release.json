@@ -1,5 +1,11 @@
 [
   {
+    "version": "MatriX.146.1.Client",
+    "versionInt": 148,
+    "link": "https://github.com/9000000/TorrServe/releases/download/MatriX.146.1.Client/TorrServe_MatriX.146.1.Client-release.apk",
+    "desc": "## TorrServe MatriX.146.1.Client\n\n### Thay đổi:\n- chore: release MatriX.146.Client\n- chore: release MatriX.146.Client\n- chore: release MatriX.145.Client\n- feat: add UpdaterServer utility for managing and updating server binaries\n- chore: release MatriX.145.Client"
+  },
+  {
     "version": "MatriX.146.Client",
     "versionInt": 147,
     "link": "https://github.com/9000000/TorrServe/releases/download/MatriX.146.Client/TorrServe_MatriX.146.Client-release.apk",
