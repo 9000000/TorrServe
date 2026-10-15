@@ -125,6 +125,26 @@ def read_app_version():
     return version_name, version_code
 
 
+def format_version_name(val: str) -> str:
+    val = val.strip()
+    if not val:
+        return ""
+    core = val
+    if core.startswith("MatriX."):
+        core = core[len("MatriX."):]
+    elif core.startswith("matrix."):
+        core = core[len("matrix."):]
+    elif core.startswith("MatriX_"):
+        core = core[len("MatriX_"):]
+
+    if core.endswith(".Client"):
+        core = core[:-len(".Client")]
+    elif core.endswith(".client"):
+        core = core[:-len(".client")]
+
+    return f"MatriX.{core}.Client"
+
+
 def update_build_gradle_version(new_version_name: str, new_version_code: int):
     if not BUILD_GRADLE.exists():
         return
@@ -372,9 +392,9 @@ def upload_to_github_release(token: str, owner: str, repo: str, branch: str, tag
 def main():
     parser = argparse.ArgumentParser(description="Tự động build và push Release APK lên GitHub")
     parser.add_argument("--skip-build", action="store_true", help="Bỏ qua bước biên dịch Gradle")
-    parser.add_argument("--version-name", "-v", type=str, default="", help="Tên phiên bản mới (versionName, vd: MatriX.146.Client)")
-    parser.add_argument("--version-code", "-c", type=int, default=0, help="Mã phiên bản mới (versionCode số nguyên, vd: 146)")
-    parser.add_argument("--no-input", "-y", action="store_true", help="Bỏ qua hỏi nhập phiên bản, giữ nguyên phiên bản trong build.gradle")
+    parser.add_argument("--version-name", "-v", type=str, default="", help="Tên phiên bản mới (vd: 146, 146.1 hoặc MatriX.146.Client)")
+    parser.add_argument("--version-code", "-c", type=int, default=0, help="Mã phiên bản (mặc định tự động tăng versionCode lên 1)")
+    parser.add_argument("--no-input", "-y", action="store_true", help="Bỏ qua hỏi nhập phiên bản, tự động tăng phiên bản")
     parser.add_argument("--title", type=str, default="", help="Tiêu đề Release")
     parser.add_argument("--notes", type=str, default="", help="Nội dung ghi chú Release")
     parser.add_argument("--tag", type=str, default="", help="Tên tag tùy chọn (mặc định lấy versionName)")
@@ -382,35 +402,52 @@ def main():
     args = parser.parse_args()
 
     curr_vn, curr_vc = read_app_version()
-    target_vn = args.version_name.strip()
+    auto_vc = curr_vc + 1
+
+    # Tự động gợi ý phiên bản tiếp theo
+    suggested_input = str(auto_vc)
+    suggested_vn = format_version_name(suggested_input)
+
+    target_vn = ""
     target_vc = args.version_code
 
-    # Tùy chọn nhập số phiên bản khi build
+    if args.version_name.strip():
+        target_vn = format_version_name(args.version_name)
+
+    # Hiển thị tùy chọn nhập phiên bản khi build
     if not target_vn and not args.no_input and sys.stdin.isatty():
         print("=" * 60)
         print(f"  TORRSERVE AUTO RELEASE TOOL")
-        print(f"  Phiên bản hiện tại: {curr_vn} (versionCode: {curr_vc})")
+        print(f"  Phiên bản hiện tại : {curr_vn} (versionCode: {curr_vc})")
+        print(f"  Gợi ý phiên bản mới: {suggested_vn} (versionCode: {auto_vc})")
         print("=" * 60)
         try:
-            user_vn = input(f"Nhập versionName mới [Enter để giữ '{curr_vn}']: ").strip()
-            target_vn = user_vn if user_vn else curr_vn
+            prompt_text = f"Nhập phiên bản mới (vd: 146 hoặc 146.1) [Enter để chọn {suggested_vn}]: "
+            user_input = input(prompt_text).strip()
+            if user_input:
+                target_vn = format_version_name(user_input)
+            else:
+                target_vn = suggested_vn
 
-            digits = re.findall(r"\d+", target_vn)
-            suggested_vc = int(digits[0]) if digits else curr_vc
+            # Tự động tăng versionCode
             if target_vc <= 0:
-                user_vc = input(f"Nhập versionCode mới [Enter để dùng {suggested_vc}]: ").strip()
-                target_vc = int(user_vc) if user_vc else suggested_vc
+                digits = re.findall(r"\d+", target_vn)
+                calc_vc = int(digits[0]) if digits and int(digits[0]) >= auto_vc else auto_vc
+
+                vc_prompt = f"versionCode tự động tăng [{calc_vc}] (Enter để dùng {calc_vc}, hoặc nhập số khác): "
+                user_vc = input(vc_prompt).strip()
+                target_vc = int(user_vc) if user_vc else calc_vc
         except (KeyboardInterrupt, EOFError):
             print("\nĐã hủy quá trình phát hành.")
             sys.exit(0)
         except ValueError:
-            print_warn("versionCode nhập vào không phải số nguyên! Giữ nguyên giá trị mặc định.")
-            target_vc = curr_vc
+            print_warn("versionCode nhập vào không phải số nguyên! Sử dụng giá trị tự động tăng.")
+            target_vc = auto_vc
     else:
         if not target_vn:
-            target_vn = curr_vn
+            target_vn = suggested_vn
         if target_vc <= 0:
-            target_vc = curr_vc
+            target_vc = auto_vc
 
     # Cập nhật app/build.gradle nếu phiên bản thay đổi
     if target_vn != curr_vn or target_vc != curr_vc:
