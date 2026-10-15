@@ -216,16 +216,7 @@ def prepare_apk(version_name: str) -> Path:
 
 
 def git_tag_and_push(tag: str, branch: str):
-    print_step("3/4", f"Kiểm tra và đẩy Git Tag '{tag}' lên nhánh '{branch}'...")
-
-    # Nếu có thay đổi chưa commit (ví dụ release.bat, .gitignore), commit và push lên nhánh trước
-    st_res = subprocess.run(["git", "status", "--porcelain"], cwd=ROOT, capture_output=True, text=True)
-    if st_res.stdout.strip():
-        print("   Phát hiện thay đổi trong repository, đang commit trước khi gắn tag...")
-        subprocess.run(["git", "add", "."], cwd=ROOT)
-        subprocess.run(["git", "commit", "-m", f"chore: release {tag}"], cwd=ROOT)
-        subprocess.run(["git", "push", "origin", branch], cwd=ROOT)
-        print_success(f"Đã push commit mới lên nhánh '{branch}'")
+    print_step("3/4", f"Kiểm tra và đẩy Git Tag '{tag}' lên remote...")
 
     # Kiểm tra tag đã tồn tại cục bộ chưa
     res = subprocess.run(["git", "tag", "-l", tag], cwd=ROOT, capture_output=True, text=True)
@@ -398,6 +389,7 @@ def main():
     parser.add_argument("--title", type=str, default="", help="Tiêu đề Release")
     parser.add_argument("--notes", type=str, default="", help="Nội dung ghi chú Release")
     parser.add_argument("--tag", type=str, default="", help="Tên tag tùy chọn (mặc định lấy versionName)")
+    parser.add_argument("--no-tag", action="store_true", help="Bỏ qua bước tạo và đẩy git tag")
     parser.add_argument("--prerelease", action="store_true", help="Đánh dấu bản pre-release")
     args = parser.parse_args()
 
@@ -491,7 +483,10 @@ def main():
     update_release_metadata_files(version_name, version_code, tag, owner, repo, notes)
 
     # 5. Tạo Git tag và đẩy lên git remote
-    git_tag_and_push(tag, branch)
+    if not args.no_tag:
+        git_tag_and_push(tag, branch)
+    else:
+        print_step("3/4", "Bỏ qua bước gắn tag git (--no-tag)")
 
     # 6. Đẩy Release lên GitHub
     upload_to_github_release(
