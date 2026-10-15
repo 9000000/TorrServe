@@ -255,6 +255,172 @@ object UpdaterServer {
         return ""
     }
 
+    private fun extractAssetKey(rawName: String): String {
+        var name = rawName.trim()
+        if (name.endsWith(".zip", ignoreCase = true) ||
+            name.endsWith(".AppImage", ignoreCase = true) ||
+            name.endsWith(".exe", ignoreCase = true)
+        ) return ""
+
+        val prefixes = listOf("TorrServer-LT-", "TorrServer-", "torrserver-lt-", "torrserver-")
+        for (p in prefixes) {
+            if (name.startsWith(p, ignoreCase = true)) {
+                name = name.substring(p.length)
+                break
+            }
+        }
+        return name
+    }
+
+    private fun addAssetToLinks(links: MutableMap<String, String>, assetName: String, downloadUrl: String) {
+        val key = extractAssetKey(assetName)
+        if (key.isNotEmpty() && downloadUrl.isNotEmpty()) {
+            links[key] = downloadUrl
+            if (key.contains("arm7", ignoreCase = true)) {
+                links[key.replace("arm7", "armv7", ignoreCase = true)] = downloadUrl
+            } else if (key.contains("armv7", ignoreCase = true)) {
+                links[key.replace("armv7", "arm7", ignoreCase = true)] = downloadUrl
+            }
+            if (!key.startsWith("android-", ignoreCase = true) && !key.startsWith("linux-", ignoreCase = true)) {
+                if (!links.containsKey("android-$key")) links["android-$key"] = downloadUrl
+                if (!links.containsKey("linux-$key")) links["linux-$key"] = downloadUrl
+            }
+        }
+    }
+
+    private fun fetchFromGitHubReleasesApi(owner: String, repo: String): List<ServVersion> {
+        val gson = Gson()
+        val apiUrls = listOf(
+            "https://api.github.com/repos/$owner/$repo/releases",
+            "https://ghproxy.net/https://api.github.com/repos/$owner/$repo/releases",
+            "https://mirror.ghproxy.com/https://api.github.com/repos/$owner/$repo/releases",
+            "https://api.github.com/repos/$owner/$repo/releases/latest",
+            "https://ghproxy.net/https://api.github.com/repos/$owner/$repo/releases/latest"
+        )
+
+        for (apiUrl in apiUrls) {
+            try {
+                val body = Net.get(apiUrl, 15000).trim()
+                if (body.isEmpty()) continue
+
+                if (body.startsWith("[")) {
+                    val releases = gson.fromJson(body, com.google.gson.JsonArray::class.java)
+                    if (releases != null && releases.size() > 0) {
+                        val parsedList = mutableListOf<ServVersion>()
+                        for (element in releases) {
+                            val relObj = element.asJsonObject
+                            val tagName = relObj.get("tag_name")?.asString ?: relObj.get("name")?.asString ?: ""
+                            val assets = relObj.getAsJsonArray("assets")
+                            if (tagName.isNotEmpty() && assets != null) {
+                                val links = mutableMapOf<String, String>()
+                                for (a in assets) {
+                                    val assetObj = a.asJsonObject
+                                    val name = assetObj.get("name")?.asString ?: ""
+                                    val downloadUrl = assetObj.get("browser_download_url")?.asString ?: ""
+                                    addAssetToLinks(links, name, downloadUrl)
+                                }
+                                if (links.isNotEmpty()) {
+                                    parsedList.add(ServVersion(tagName, links))
+                                }
+                            }
+                        }
+                        if (parsedList.isNotEmpty()) {
+                            return parsedList
+                        }
+                    }
+                } else if (body.startsWith("{")) {
+                    val relObj = gson.fromJson(body, com.google.gson.JsonObject::class.java)
+                    val tagName = relObj.get("tag_name")?.asString ?: relObj.get("name")?.asString ?: ""
+                    val assets = relObj.getAsJsonArray("assets")
+                    if (tagName.isNotEmpty() && assets != null) {
+                        val links = mutableMapOf<String, String>()
+                        for (a in assets) {
+                            val assetObj = a.asJsonObject
+                            val name = assetObj.get("name")?.asString ?: ""
+                            val downloadUrl = assetObj.get("browser_download_url")?.asString ?: ""
+                            addAssetToLinks(links, name, downloadUrl)
+                        }
+                        if (links.isNotEmpty()) {
+                            return listOf(ServVersion(tagName, links))
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+            }
+        }
+        return emptyList()
+    }
+
+    private fun fetchFromGitHubReleasesWeb(owner: String, repo: String): List<ServVersion> {
+        val webUrls = listOf(
+            "https://github.com/$owner/$repo/releases",
+            "https://ghproxy.net/https://github.com/$owner/$repo/releases"
+        )
+        val dlRegex = Regex("""href=["'](?:https://github\.com)?(/[\w.\-]+/[\w.\-]+/releases/download/([^/"'\s]+)/([^/"'\s]+))["']""", RegexOption.IGNORE_CASE)
+        val expRegex = Regex("""expanded_assets/([^/"'\s]+)""", RegexOption.IGNORE_CASE)
+        val tagLinkRegex = Regex("""/releases/tag/([^/"'\s]+)""", RegexOption.IGNORE_CASE)
+
+        for (webUrl in webUrls) {
+            try {
+                val html = Net.get(webUrl, 15000)
+                if (html.isBlank()) continue
+
+                val versionsMap = LinkedHashMap<String, MutableMap<String, String>>()
+
+                for (match in dlRegex.findAll(html)) {
+                    val path = match.groupValues[1]
+                    val tag = match.groupValues[2]
+                    val asset = match.groupValues[3]
+                    val fullUrl = if (path.startsWith("http", ignoreCase = true)) path else "https://github.com$path"
+                    val map = versionsMap.getOrPut(tag) { mutableMapOf() }
+                    addAssetToLinks(map, asset, fullUrl)
+                }
+
+                val tagList = mutableListOf<String>()
+                for (m in expRegex.findAll(html)) {
+                    val tag = m.groupValues[1]
+                    if (!tagList.contains(tag)) tagList.add(tag)
+                }
+                for (m in tagLinkRegex.findAll(html)) {
+                    val tag = m.groupValues[1]
+                    if (!tagList.contains(tag)) tagList.add(tag)
+                }
+
+                for (tag in tagList.take(5)) {
+                    if (versionsMap[tag].isNullOrEmpty()) {
+                        try {
+                            val expUrls = listOf(
+                                "https://github.com/$owner/$repo/releases/expanded_assets/$tag",
+                                "https://ghproxy.net/https://github.com/$owner/$repo/releases/expanded_assets/$tag"
+                            )
+                            for (expUrl in expUrls) {
+                                val expHtml = Net.get(expUrl, 10000)
+                                if (expHtml.isNotBlank()) {
+                                    val map = versionsMap.getOrPut(tag) { mutableMapOf() }
+                                    for (match in dlRegex.findAll(expHtml)) {
+                                        val path = match.groupValues[1]
+                                        val asset = match.groupValues[3]
+                                        val fullUrl = if (path.startsWith("http", ignoreCase = true)) path else "https://github.com$path"
+                                        addAssetToLinks(map, asset, fullUrl)
+                                    }
+                                    if (map.isNotEmpty()) break
+                                }
+                            }
+                        } catch (_: Exception) {}
+                    }
+                }
+
+                val result = versionsMap.mapNotNull { (tag, links) ->
+                    if (links.isNotEmpty()) ServVersion(tag, links) else null
+                }
+                if (result.isNotEmpty()) {
+                    return result
+                }
+            } catch (_: Exception) {}
+        }
+        return emptyList()
+    }
+
     fun check(): Boolean {
         val currentRepo = Settings.getTorrServerRepo()
         if (version != null && currentRepo == lastCheckedRepo) {
@@ -266,6 +432,26 @@ object UpdaterServer {
         val repo = gitSource.repo
         val branch = gitSource.branch
 
+        // Step 1: Check GitHub Releases API (primary source for real releases)
+        val apiVersions = fetchFromGitHubReleasesApi(owner, repo)
+        if (apiVersions.isNotEmpty()) {
+            availableVersions = apiVersions
+            version = apiVersions[0]
+            lastCheckedRepo = currentRepo
+            return true
+        }
+
+        // Step 2: Fallback to GitHub Releases Web HTML scraping (bypasses GitHub API rate limits 403)
+        val webVersions = fetchFromGitHubReleasesWeb(owner, repo)
+        if (webVersions.isNotEmpty()) {
+            availableVersions = webVersions
+            version = webVersions[0]
+            lastCheckedRepo = currentRepo
+            return true
+        }
+
+        // Step 3: Fallback to release.json only as last resort (e.g. self-hosted or legacy mirrors)
+        // Explicitly filter out stale 1.1.77 placeholder
         val candidateRawUrls = mutableListOf<String>()
         if (branch.isNotEmpty()) {
             candidateRawUrls.add("https://raw.githubusercontent.com/$owner/$repo/$branch/release.json")
@@ -286,92 +472,16 @@ object UpdaterServer {
                 if (body.isNotEmpty() && body.startsWith("{")) {
                     val parsed = gson.fromJson(body, ServVersion::class.java)
                     if (parsed != null && parsed.links.isNotEmpty()) {
-                        version = parsed
-                        availableVersions = listOf(parsed)
-                        lastCheckedRepo = currentRepo
-                        return true
+                        if (!parsed.version.equals("1.1.77", ignoreCase = true)) {
+                            version = parsed
+                            availableVersions = listOf(parsed)
+                            lastCheckedRepo = currentRepo
+                            return true
+                        }
                     }
                 }
             } catch (_: Exception) {
                 // Try next mirror
-            }
-        }
-
-        // Fallback to GitHub Releases API if raw/cdn release.json fails
-        val apiUrls = listOf(
-            "https://api.github.com/repos/$owner/$repo/releases",
-            "https://ghproxy.net/https://api.github.com/repos/$owner/$repo/releases"
-        )
-
-        for (apiUrl in apiUrls) {
-            try {
-                val body = Net.get(apiUrl, 15000).trim()
-                if (body.startsWith("[")) {
-                    val releases = gson.fromJson(body, com.google.gson.JsonArray::class.java)
-                    if (releases != null && releases.size() > 0) {
-                        val parsedList = mutableListOf<ServVersion>()
-                        for (element in releases) {
-                            val relObj = element.asJsonObject
-                            val tagName = relObj.get("tag_name")?.asString ?: relObj.get("name")?.asString ?: ""
-                            val assets = relObj.getAsJsonArray("assets")
-                            if (tagName.isNotEmpty() && assets != null) {
-                                val links = mutableMapOf<String, String>()
-                                for (a in assets) {
-                                    val assetObj = a.asJsonObject
-                                    val name = assetObj.get("name")?.asString ?: ""
-                                    val downloadUrl = assetObj.get("browser_download_url")?.asString ?: ""
-                                    val key = when {
-                                        name.startsWith("TorrServer-LT-", ignoreCase = true) -> name.substring("TorrServer-LT-".length)
-                                        name.startsWith("TorrServer-", ignoreCase = true) -> name.substring("TorrServer-".length)
-                                        name.startsWith("torrserver-", ignoreCase = true) -> name.substring("torrserver-".length)
-                                        else -> ""
-                                    }
-                                    if (key.isNotEmpty() && downloadUrl.isNotEmpty() && !key.endsWith(".zip") && !key.endsWith(".AppImage")) {
-                                        links[key] = downloadUrl
-                                    }
-                                }
-                                if (links.isNotEmpty()) {
-                                    parsedList.add(ServVersion(tagName, links))
-                                }
-                            }
-                        }
-                        if (parsedList.isNotEmpty()) {
-                            availableVersions = parsedList
-                            version = parsedList[0]
-                            lastCheckedRepo = currentRepo
-                            return true
-                        }
-                    }
-                } else if (body.startsWith("{")) {
-                    val relObj = gson.fromJson(body, com.google.gson.JsonObject::class.java)
-                    val tagName = relObj.get("tag_name")?.asString ?: relObj.get("name")?.asString ?: ""
-                    val assets = relObj.getAsJsonArray("assets")
-                    if (tagName.isNotEmpty() && assets != null) {
-                        val links = mutableMapOf<String, String>()
-                        for (a in assets) {
-                            val assetObj = a.asJsonObject
-                            val name = assetObj.get("name")?.asString ?: ""
-                            val downloadUrl = assetObj.get("browser_download_url")?.asString ?: ""
-                            val key = when {
-                                name.startsWith("TorrServer-LT-", ignoreCase = true) -> name.substring("TorrServer-LT-".length)
-                                name.startsWith("TorrServer-", ignoreCase = true) -> name.substring("TorrServer-".length)
-                                name.startsWith("torrserver-", ignoreCase = true) -> name.substring("torrserver-".length)
-                                else -> ""
-                            }
-                            if (key.isNotEmpty() && downloadUrl.isNotEmpty() && !key.endsWith(".zip") && !key.endsWith(".AppImage")) {
-                                links[key] = downloadUrl
-                            }
-                        }
-                        if (links.isNotEmpty()) {
-                            val ver = ServVersion(tagName, links)
-                            availableVersions = listOf(ver)
-                            version = ver
-                            lastCheckedRepo = currentRepo
-                            return true
-                        }
-                    }
-                }
-            } catch (_: Exception) {
             }
         }
 
@@ -507,6 +617,20 @@ object UpdaterServer {
 
             for (key in keyCandidates) {
                 val found = ver.links.entries.firstOrNull { it.key.equals(key, ignoreCase = true) }?.value
+                if (!found.isNullOrBlank()) {
+                    return found
+                }
+            }
+
+            val bareKeys = when (arch) {
+                "armv7", "arm7", "arm" -> listOf("armv7", "arm7", "arm", "armeabi-v7a")
+                "arm64" -> listOf("arm64", "arm64-v8a", "aarch64")
+                "amd64" -> listOf("amd64", "x86_64", "x64")
+                "386" -> listOf("386", "x86")
+                else -> listOf(arch)
+            }
+            for (key in bareKeys) {
+                val found = ver.links[key] ?: ver.links.entries.firstOrNull { it.key.equals(key, ignoreCase = true) }?.value
                 if (!found.isNullOrBlank()) {
                     return found
                 }
