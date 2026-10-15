@@ -125,6 +125,20 @@ def read_app_version():
     return version_name, version_code
 
 
+def update_build_gradle_version(new_version_name: str, new_version_code: int):
+    if not BUILD_GRADLE.exists():
+        return
+    try:
+        content = BUILD_GRADLE.read_text(encoding="utf-8")
+        content = re.sub(r'versionName\s+["\'][^"\']+["\']', f'versionName "{new_version_name}"', content, count=1)
+        content = re.sub(r'versionCode\s+\d+', f'versionCode {new_version_code}', content, count=1)
+        BUILD_GRADLE.write_text(content, encoding="utf-8")
+        print_success(f"Đã cập nhật app/build.gradle: versionName = \"{new_version_name}\", versionCode = {new_version_code}")
+    except Exception as e:
+        print_error(f"Lỗi khi cập nhật app/build.gradle: {e}")
+        sys.exit(1)
+
+
 def get_recent_commits(count=5) -> str:
     try:
         res = subprocess.run(
@@ -358,13 +372,51 @@ def upload_to_github_release(token: str, owner: str, repo: str, branch: str, tag
 def main():
     parser = argparse.ArgumentParser(description="Tự động build và push Release APK lên GitHub")
     parser.add_argument("--skip-build", action="store_true", help="Bỏ qua bước biên dịch Gradle")
+    parser.add_argument("--version-name", "-v", type=str, default="", help="Tên phiên bản mới (versionName, vd: MatriX.146.Client)")
+    parser.add_argument("--version-code", "-c", type=int, default=0, help="Mã phiên bản mới (versionCode số nguyên, vd: 146)")
+    parser.add_argument("--no-input", "-y", action="store_true", help="Bỏ qua hỏi nhập phiên bản, giữ nguyên phiên bản trong build.gradle")
     parser.add_argument("--title", type=str, default="", help="Tiêu đề Release")
     parser.add_argument("--notes", type=str, default="", help="Nội dung ghi chú Release")
     parser.add_argument("--tag", type=str, default="", help="Tên tag tùy chọn (mặc định lấy versionName)")
     parser.add_argument("--prerelease", action="store_true", help="Đánh dấu bản pre-release")
     args = parser.parse_args()
 
-    version_name, version_code = read_app_version()
+    curr_vn, curr_vc = read_app_version()
+    target_vn = args.version_name.strip()
+    target_vc = args.version_code
+
+    # Tùy chọn nhập số phiên bản khi build
+    if not target_vn and not args.no_input and sys.stdin.isatty():
+        print("=" * 60)
+        print(f"  TORRSERVE AUTO RELEASE TOOL")
+        print(f"  Phiên bản hiện tại: {curr_vn} (versionCode: {curr_vc})")
+        print("=" * 60)
+        try:
+            user_vn = input(f"Nhập versionName mới [Enter để giữ '{curr_vn}']: ").strip()
+            target_vn = user_vn if user_vn else curr_vn
+
+            digits = re.findall(r"\d+", target_vn)
+            suggested_vc = int(digits[0]) if digits else curr_vc
+            if target_vc <= 0:
+                user_vc = input(f"Nhập versionCode mới [Enter để dùng {suggested_vc}]: ").strip()
+                target_vc = int(user_vc) if user_vc else suggested_vc
+        except (KeyboardInterrupt, EOFError):
+            print("\nĐã hủy quá trình phát hành.")
+            sys.exit(0)
+        except ValueError:
+            print_warn("versionCode nhập vào không phải số nguyên! Giữ nguyên giá trị mặc định.")
+            target_vc = curr_vc
+    else:
+        if not target_vn:
+            target_vn = curr_vn
+        if target_vc <= 0:
+            target_vc = curr_vc
+
+    # Cập nhật app/build.gradle nếu phiên bản thay đổi
+    if target_vn != curr_vn or target_vc != curr_vc:
+        update_build_gradle_version(target_vn, target_vc)
+
+    version_name, version_code = target_vn, target_vc
     tag = args.tag or version_name
     title = args.title or f"TorrServe {version_name}"
     branch, owner, repo = get_git_info()
