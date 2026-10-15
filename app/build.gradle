@@ -9,7 +9,7 @@ plugins {
 android {
     compileSdk 37
     defaultConfig {
-        applicationId "ru.yourok.torrserve"
+        applicationId "ru.yourok.torrserve.matrix"
         minSdkVersion 16
         //noinspection ExpiredTargetSdkVersion
         targetSdkVersion 28
