@@ -117,6 +117,41 @@
                 android:textSize="16sp"
                 tools:text="MatriX.121" />
         </com.google.android.flexbox.FlexboxLayout>
+
+        <com.google.android.flexbox.FlexboxLayout
+            android:id="@+id/layoutServerRepo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:background="?android:attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
+            app:alignContent="flex_start"
+            app:alignItems="flex_start"
+            app:dividerDrawable="@drawable/flexdivider"
+            app:flexWrap="nowrap"
+            app:justifyContent="space_evenly"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:showDivider="middle">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minWidth="160dp"
+                android:text="@string/server_repo"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/tvServerRepo"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minWidth="160dp"
+                android:textColor="?android:attr/textColorPrimary"
+                android:textSize="16sp"
+                tools:text="9000000/TorrServer-LT" />
+        </com.google.android.flexbox.FlexboxLayout>
     </LinearLayout>
 
     <ScrollView
@@ -152,6 +187,22 @@
 
                 <requestFocus />
             </Button>
+
+            <Button
+                android:id="@+id/btnSelectVersion"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/btn_select_version"
+                android:visibility="gone"
+                tools:visibility="visible" />
+
+            <Button
+                android:id="@+id/btnChangeRepo"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/change_server_repo" />
 
             <Button
                 android:id="@+id/btnUpdateDownload"

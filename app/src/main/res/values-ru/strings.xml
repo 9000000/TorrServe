@@ -133,6 +133,16 @@
     <string name="ffprobe_summary">Загрузите FFProbe для получения данных о видео, таких как длительность, битрейт и т.д.</string>
     <string name="arch">Архитектура ОС</string>
     <string name="update_server">Обновление сервера</string>
+    <string name="server_repo">Репозиторий Git</string>
+    <string name="server_repo_title">Репозиторий TorrServer</string>
+    <string name="server_repo_summary">Репозиторий GitHub для обновлений TorrServer (напр. 9000000/TorrServer)</string>
+    <string name="change_server_repo">Сменить репозиторий Git</string>
+    <string name="server_repo_dialog_title">Репозиторий TorrServer Git</string>
+    <string name="server_repo_dialog_hint">напр. 9000000/TorrServer или 9000000/TorrServer-LT@tet</string>
+    <string name="btn_select_version">Выбрать версию…</string>
+    <string name="select_version_title">Выберите версию для установки</string>
+    <string name="default_repo">По умолчанию</string>
+    <string name="save">Сохранить</string>
     <string name="warn_error_check_ver">Ошибка проверки версии сервера</string>
     <string name="warn_error_download_server">Ошибка загрузки сервера</string>
     <string name="warn_no_local_updates">Нет локальных обновлений</string>

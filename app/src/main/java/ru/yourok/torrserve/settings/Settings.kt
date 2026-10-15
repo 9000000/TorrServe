@@ -26,6 +26,19 @@ object Settings {
 
     fun getServerAuth(): String = get("server_auth", "").trim()
     fun useLocalAuth(): Boolean = get("local_auth", false)
+
+    const val TORRSERVER_REPO_KEY = "server_repo"
+    const val DEFAULT_TORRSERVER_REPO = "9000000/TorrServer-LT"
+
+    fun getTorrServerRepo(): String {
+        val repo: String = get(TORRSERVER_REPO_KEY, DEFAULT_TORRSERVER_REPO)
+        return repo.trim().ifEmpty { DEFAULT_TORRSERVER_REPO }
+    }
+
+    fun setTorrServerRepo(repo: String) {
+        val clean = repo.trim().ifEmpty { DEFAULT_TORRSERVER_REPO }
+        set(TORRSERVER_REPO_KEY, clean)
+    }
     fun getHosts(): List<String> {
         val prefs = PreferenceManager.getDefaultSharedPreferences(App.context)
         val ret = prefs.getStringSet("saved_hosts", mutableSetOf())

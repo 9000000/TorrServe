@@ -12,16 +12,83 @@ import ru.yourok.torrserve.server.api.Api
 import ru.yourok.torrserve.server.local.ServerFile
 import ru.yourok.torrserve.server.local.TorrService
 //import ru.yourok.torrserve.utils.Accessibility
+import ru.yourok.torrserve.settings.Settings
 import ru.yourok.torrserve.utils.Http
 import ru.yourok.torrserve.utils.Net
 import java.io.*
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 
+data class GitSource(
+    val owner: String,
+    val repo: String,
+    val branch: String = ""
+)
+
 object UpdaterServer {
     private var version: ServVersion? = null
+    private var availableVersions: List<ServVersion> = emptyList()
+    private var lastCheckedRepo: String = ""
     private var error: String = ""
     private val serverFile = ServerFile()
+
+    fun resetCache() {
+        version = null
+        availableVersions = emptyList()
+        lastCheckedRepo = ""
+        error = ""
+    }
+
+    fun getAvailableVersions(): List<ServVersion> = availableVersions
+
+    fun setVersion(ver: ServVersion) {
+        version = ver
+    }
+
+    fun getVersion(): ServVersion? = version
+
+    fun parseGitSource(input: String): GitSource {
+        var raw = input.trim()
+        if (raw.isEmpty()) {
+            return GitSource("9000000", "TorrServer-LT", "tet")
+        }
+        raw = raw.removePrefix("https://").removePrefix("http://")
+        raw = raw.removePrefix("raw.githubusercontent.com/").removePrefix("github.com/")
+        raw = raw.removeSuffix(".git").trim('/')
+
+        var branch = ""
+        if (raw.contains("@")) {
+            val parts = raw.split("@", limit = 2)
+            raw = parts[0].trim()
+            branch = parts[1].trim()
+        } else if (raw.contains("#")) {
+            val parts = raw.split("#", limit = 2)
+            raw = parts[0].trim()
+            branch = parts[1].trim()
+        }
+
+        val parts = raw.split('/').filter { it.isNotBlank() }
+        if (parts.size >= 4 && (parts[2].equals("tree", true) || parts[2].equals("raw", true))) {
+            val owner = parts[0]
+            val repo = parts[1]
+            if (branch.isEmpty()) branch = parts.subList(3, parts.size).joinToString("/")
+            return GitSource(owner, repo, branch)
+        } else if (parts.size == 3 && branch.isEmpty()) {
+            val owner = parts[0]
+            val repo = parts[1]
+            branch = parts[2]
+            return GitSource(owner, repo, branch)
+        } else if (parts.size >= 2) {
+            val owner = parts[0]
+            val repo = parts[1]
+            if (branch.isEmpty() && owner.equals("9000000", true) && repo.equals("TorrServer-LT", true)) {
+                branch = "tet"
+            }
+            return GitSource(owner, repo, branch)
+        } else {
+            return GitSource("9000000", "TorrServer-LT", "tet")
+        }
+    }
 
     suspend fun getLocalVersion(): String {
         var lv: String
@@ -189,18 +256,39 @@ object UpdaterServer {
     }
 
     fun check(): Boolean {
-        val urls = listOf(
-            Consts.UPDATE_SERVER_PATH,
-            Consts.UPDATE_SERVER_PATH_CDN
-        )
+        val currentRepo = Settings.getTorrServerRepo()
+        if (version != null && currentRepo == lastCheckedRepo) {
+            return true
+        }
+
+        val gitSource = parseGitSource(currentRepo)
+        val owner = gitSource.owner
+        val repo = gitSource.repo
+        val branch = gitSource.branch
+
+        val candidateRawUrls = mutableListOf<String>()
+        if (branch.isNotEmpty()) {
+            candidateRawUrls.add("https://raw.githubusercontent.com/$owner/$repo/$branch/release.json")
+            candidateRawUrls.add("https://cdn.jsdelivr.net/gh/$owner/$repo@$branch/release.json")
+        }
+        val commonBranches = listOf("master", "main", "tet")
+        for (b in commonBranches) {
+            if (!b.equals(branch, ignoreCase = true)) {
+                candidateRawUrls.add("https://raw.githubusercontent.com/$owner/$repo/$b/release.json")
+                candidateRawUrls.add("https://cdn.jsdelivr.net/gh/$owner/$repo@$b/release.json")
+            }
+        }
+
         val gson = Gson()
-        for (url in urls) {
+        for (url in candidateRawUrls) {
             try {
-                val body = Net.get(url, 15000).trim()
+                val body = Net.get(url, 10000).trim()
                 if (body.isNotEmpty() && body.startsWith("{")) {
                     val parsed = gson.fromJson(body, ServVersion::class.java)
                     if (parsed != null && parsed.links.isNotEmpty()) {
                         version = parsed
+                        availableVersions = listOf(parsed)
+                        lastCheckedRepo = currentRepo
                         return true
                     }
                 }
@@ -210,34 +298,81 @@ object UpdaterServer {
         }
 
         // Fallback to GitHub Releases API if raw/cdn release.json fails
-        try {
-            val apiUrl = "https://api.github.com/repos/9000000/TorrServer-LT/releases"
-            val body = Net.get(apiUrl, 15000).trim()
-            if (body.startsWith("[")) {
-                val releases = gson.fromJson(body, com.google.gson.JsonArray::class.java)
-                if (releases != null && releases.size() > 0) {
-                    val firstRel = releases.get(0).asJsonObject
-                    val tagName = firstRel.get("tag_name")?.asString ?: ""
-                    val assets = firstRel.getAsJsonArray("assets")
+        val apiUrls = listOf(
+            "https://api.github.com/repos/$owner/$repo/releases",
+            "https://ghproxy.net/https://api.github.com/repos/$owner/$repo/releases"
+        )
+
+        for (apiUrl in apiUrls) {
+            try {
+                val body = Net.get(apiUrl, 15000).trim()
+                if (body.startsWith("[")) {
+                    val releases = gson.fromJson(body, com.google.gson.JsonArray::class.java)
+                    if (releases != null && releases.size() > 0) {
+                        val parsedList = mutableListOf<ServVersion>()
+                        for (element in releases) {
+                            val relObj = element.asJsonObject
+                            val tagName = relObj.get("tag_name")?.asString ?: relObj.get("name")?.asString ?: ""
+                            val assets = relObj.getAsJsonArray("assets")
+                            if (tagName.isNotEmpty() && assets != null) {
+                                val links = mutableMapOf<String, String>()
+                                for (a in assets) {
+                                    val assetObj = a.asJsonObject
+                                    val name = assetObj.get("name")?.asString ?: ""
+                                    val downloadUrl = assetObj.get("browser_download_url")?.asString ?: ""
+                                    val key = when {
+                                        name.startsWith("TorrServer-LT-", ignoreCase = true) -> name.substring("TorrServer-LT-".length)
+                                        name.startsWith("TorrServer-", ignoreCase = true) -> name.substring("TorrServer-".length)
+                                        name.startsWith("torrserver-", ignoreCase = true) -> name.substring("torrserver-".length)
+                                        else -> ""
+                                    }
+                                    if (key.isNotEmpty() && downloadUrl.isNotEmpty() && !key.endsWith(".zip") && !key.endsWith(".AppImage")) {
+                                        links[key] = downloadUrl
+                                    }
+                                }
+                                if (links.isNotEmpty()) {
+                                    parsedList.add(ServVersion(tagName, links))
+                                }
+                            }
+                        }
+                        if (parsedList.isNotEmpty()) {
+                            availableVersions = parsedList
+                            version = parsedList[0]
+                            lastCheckedRepo = currentRepo
+                            return true
+                        }
+                    }
+                } else if (body.startsWith("{")) {
+                    val relObj = gson.fromJson(body, com.google.gson.JsonObject::class.java)
+                    val tagName = relObj.get("tag_name")?.asString ?: relObj.get("name")?.asString ?: ""
+                    val assets = relObj.getAsJsonArray("assets")
                     if (tagName.isNotEmpty() && assets != null) {
                         val links = mutableMapOf<String, String>()
-                        for (element in assets) {
-                            val assetObj = element.asJsonObject
+                        for (a in assets) {
+                            val assetObj = a.asJsonObject
                             val name = assetObj.get("name")?.asString ?: ""
                             val downloadUrl = assetObj.get("browser_download_url")?.asString ?: ""
-                            if (name.startsWith("TorrServer-LT-") && downloadUrl.isNotEmpty()) {
-                                val key = name.removePrefix("TorrServer-LT-")
+                            val key = when {
+                                name.startsWith("TorrServer-LT-", ignoreCase = true) -> name.substring("TorrServer-LT-".length)
+                                name.startsWith("TorrServer-", ignoreCase = true) -> name.substring("TorrServer-".length)
+                                name.startsWith("torrserver-", ignoreCase = true) -> name.substring("torrserver-".length)
+                                else -> ""
+                            }
+                            if (key.isNotEmpty() && downloadUrl.isNotEmpty() && !key.endsWith(".zip") && !key.endsWith(".AppImage")) {
                                 links[key] = downloadUrl
                             }
                         }
                         if (links.isNotEmpty()) {
-                            version = ServVersion(tagName, links)
+                            val ver = ServVersion(tagName, links)
+                            availableVersions = listOf(ver)
+                            version = ver
+                            lastCheckedRepo = currentRepo
                             return true
                         }
                     }
                 }
+            } catch (_: Exception) {
             }
-        } catch (_: Exception) {
         }
 
         error = App.context.getString(R.string.warn_error_check_ver)

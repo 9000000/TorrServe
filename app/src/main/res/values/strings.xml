@@ -156,6 +156,16 @@
     <string name="ffprobe_summary">Download FFProbe to obtain additional video data, such as the duration, bitrate, etc.</string>
     <string name="arch">Arch</string>
     <string name="update_server">Update version</string>
+    <string name="server_repo">Git Repository</string>
+    <string name="server_repo_title">TorrServer Git Repository</string>
+    <string name="server_repo_summary">GitHub repository for TorrServer updates (e.g. 9000000/TorrServer)</string>
+    <string name="change_server_repo">Change Git repository</string>
+    <string name="server_repo_dialog_title">TorrServer Git repository</string>
+    <string name="server_repo_dialog_hint">e.g. 9000000/TorrServer or 9000000/TorrServer-LT@tet</string>
+    <string name="btn_select_version">Select version…</string>
+    <string name="select_version_title">Select version to install</string>
+    <string name="default_repo">Default</string>
+    <string name="save">Save</string>
     <string name="warn_error_check_ver">Version check error</string>
     <string name="warn_error_download_server">Server download error</string>
     <string name="warn_no_local_updates">No local updates found</string>

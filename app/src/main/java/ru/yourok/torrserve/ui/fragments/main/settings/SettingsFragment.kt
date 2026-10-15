@@ -50,6 +50,7 @@ import ru.yourok.torrserve.ui.fragments.main.servfinder.ServerFinderFragment
 import ru.yourok.torrserve.ui.fragments.main.servsets.ServerSettingsFragment
 import ru.yourok.torrserve.ui.fragments.main.update.apk.ApkUpdateFragment
 import ru.yourok.torrserve.ui.fragments.main.update.apk.UpdaterApk
+import ru.yourok.torrserve.ui.fragments.main.update.server.UpdaterServer
 import ru.yourok.torrserve.ui.fragments.speedtest.SpeedTest
 import ru.yourok.torrserve.utils.Accessibility
 import ru.yourok.torrserve.utils.Format.dp2px
@@ -289,6 +290,19 @@ class SettingsFragment : PreferenceFragmentCompat() {
                         sfl.run(newValue as String)
                     }
                 }
+                true
+            }
+        }
+
+        findPreference<EditTextPreference>("server_repo")?.apply {
+            val currentRepo = Settings.getTorrServerRepo()
+            summary = currentRepo
+            text = currentRepo
+            setOnPreferenceChangeListener { _, newValue ->
+                val newRepo = (newValue as? String)?.trim() ?: ""
+                Settings.setTorrServerRepo(newRepo)
+                UpdaterServer.resetCache()
+                summary = Settings.getTorrServerRepo()
                 true
             }
         }

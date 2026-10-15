@@ -32,6 +32,13 @@
         app:summary="@string/host_authorization_desc"
         app:title="@string/host_authorization" />
 
+    <EditTextPreference
+        android:defaultValue="9000000/TorrServer-LT"
+        app:dialogTitle="@string/server_repo_dialog_title"
+        app:key="server_repo"
+        app:summary="@string/server_repo_summary"
+        app:title="@string/server_repo_title" />
+
     <SwitchPreferenceCompat
         android:defaultValue="false"
         android:summaryOff="@string/local_auth_sum_off"

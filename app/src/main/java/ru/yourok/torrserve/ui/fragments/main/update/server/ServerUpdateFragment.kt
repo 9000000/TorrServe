@@ -7,7 +7,10 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.TextView
+import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.widget.AppCompatEditText
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -20,6 +23,7 @@ import ru.yourok.torrserve.server.local.TorrService
 import ru.yourok.torrserve.settings.Settings
 import ru.yourok.torrserve.ui.dialogs.DialogList
 import ru.yourok.torrserve.ui.fragments.TSFragment
+import ru.yourok.torrserve.utils.Format
 import java.io.File
 import java.util.Timer
 import kotlin.concurrent.timerTask
@@ -58,6 +62,18 @@ class ServerUpdateFragment : TSFragment() {
                     }
                 }
             }
+        }
+
+        vi.findViewById<View>(R.id.layoutServerRepo)?.setOnClickListener {
+            showChangeRepoDialog()
+        }
+
+        vi.findViewById<Button>(R.id.btnChangeRepo)?.setOnClickListener {
+            showChangeRepoDialog()
+        }
+
+        vi.findViewById<Button>(R.id.btnSelectVersion)?.setOnClickListener {
+            showSelectVersionDialog()
         }
 
         vi.findViewById<Button>(R.id.btnUpdateDownload).setOnClickListener {
@@ -157,14 +173,92 @@ class ServerUpdateFragment : TSFragment() {
 
     private fun updateUI() {
         lifecycleScope.launch(Dispatchers.IO) {
+            val arch = UpdaterServer.getArch()
+            val localVer = UpdaterServer.getLocalVersion()
+            val currentRepo = Settings.getTorrServerRepo()
             withContext(Dispatchers.Main) {
-                view?.findViewById<TextView>(R.id.tvArch)?.text = UpdaterServer.getArch()
-                view?.findViewById<TextView>(R.id.tvLocalVersion)?.text = UpdaterServer.getLocalVersion()
+                view?.findViewById<TextView>(R.id.tvArch)?.text = arch
+                view?.findViewById<TextView>(R.id.tvLocalVersion)?.text = localVer
+                view?.findViewById<TextView>(R.id.tvServerRepo)?.text = currentRepo
             }
             UpdaterServer.check()
+            val remoteVer = UpdaterServer.getRemoteVersion()
+            val avail = UpdaterServer.getAvailableVersions()
             withContext(Dispatchers.Main) {
-                view?.findViewById<TextView>(R.id.tvRemoteVersion)?.text = UpdaterServer.getRemoteVersion()
+                view?.findViewById<TextView>(R.id.tvRemoteVersion)?.text = remoteVer
+                view?.findViewById<Button>(R.id.btnSelectVersion)?.visibility =
+                    if (avail.size > 1) View.VISIBLE else View.GONE
             }
+        }
+    }
+
+    private fun showChangeRepoDialog() {
+        val ctx = context ?: return
+        val currentRepo = Settings.getTorrServerRepo()
+        val input = AppCompatEditText(ctx).apply {
+            setText(currentRepo)
+            setSelection(text?.length ?: 0)
+            hint = getString(R.string.server_repo_dialog_hint)
+            isSingleLine = true
+        }
+
+        val container = FrameLayout(ctx).apply {
+            val pad = Format.dp2px(20f)
+            setPadding(pad, pad / 2, pad, pad / 2)
+            addView(input)
+        }
+
+        AlertDialog.Builder(ctx)
+            .setTitle(R.string.server_repo_dialog_title)
+            .setMessage(R.string.server_repo_dialog_hint)
+            .setView(container)
+            .setPositiveButton(R.string.save) { _, _ ->
+                val newRepo = input.text?.toString()?.trim() ?: ""
+                applyNewRepo(if (newRepo.isEmpty()) Settings.DEFAULT_TORRSERVER_REPO else newRepo)
+            }
+            .setNeutralButton(R.string.default_repo) { _, _ ->
+                applyNewRepo(Settings.DEFAULT_TORRSERVER_REPO)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun applyNewRepo(repo: String) {
+        Settings.setTorrServerRepo(repo)
+        UpdaterServer.resetCache()
+        view?.findViewById<TextView>(R.id.tvServerRepo)?.text = Settings.getTorrServerRepo()
+        view?.findViewById<TextView>(R.id.tvRemoteVersion)?.text = getString(R.string.loading_torrent)
+        lifecycleScope.launch(Dispatchers.IO) {
+            showProgress()
+            val success = UpdaterServer.check()
+            val remoteVer = UpdaterServer.getRemoteVersion()
+            val avail = UpdaterServer.getAvailableVersions()
+            withContext(Dispatchers.Main) {
+                view?.findViewById<TextView>(R.id.tvRemoteVersion)?.text = remoteVer
+                view?.findViewById<Button>(R.id.btnSelectVersion)?.visibility =
+                    if (avail.size > 1) View.VISIBLE else View.GONE
+                hideProgress()
+                if (success) {
+                    App.toast("${getString(R.string.update_server)}: $remoteVer")
+                } else {
+                    App.toast(R.string.warn_error_check_ver, true)
+                }
+            }
+        }
+    }
+
+    private fun showSelectVersionDialog() {
+        val list = UpdaterServer.getAvailableVersions()
+        if (list.isEmpty()) {
+            App.toast(R.string.no_updates)
+            return
+        }
+        val names = list.map { it.version }
+        DialogList.show(requireContext(), getString(R.string.select_version_title), names) { chosenName, pos ->
+            val chosenVer = list[pos]
+            UpdaterServer.setVersion(chosenVer)
+            view?.findViewById<TextView>(R.id.tvRemoteVersion)?.text = chosenName
+            App.toast(chosenName)
         }
     }
 

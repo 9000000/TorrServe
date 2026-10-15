@@ -11,6 +11,7 @@ object Consts {
     const val UPDATE_APK_PATH_FALLBACK_CDN = "https://cdn.jsdelivr.net/gh/9000000/TorrServe@master/release.json"
 
     // Server Core updates (Primary GitHub raw + CDN jsDelivr mirror)
+    const val DEFAULT_SERVER_REPO = "9000000/TorrServer-LT"
     const val UPDATE_SERVER_PATH = "https://raw.githubusercontent.com/9000000/TorrServer-LT/tet/release.json"
     const val UPDATE_SERVER_PATH_CDN = "https://cdn.jsdelivr.net/gh/9000000/TorrServer-LT@tet/release.json"
 
