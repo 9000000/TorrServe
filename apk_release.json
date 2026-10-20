@@ -3,7 +3,7 @@
     "version": "MatriX.147.Client",
     "versionInt": 149,
     "link": "https://github.com/9000000/TorrServe/releases/download/MatriX.147.Client/TorrServe_MatriX.147.Client-release.apk",
-    "desc": "## TorrServe MatriX.147.Client\n\n### Thay đổi:\n- feat: add ServerUpdateFragment and UpdaterServer for managing TorrServer updates\n- chore: release MatriX.147.Client and add app build.gradle configuration\n- chore: release version MatriX.146.2.Client and add build configuration\n- fix: prevent false positive update notifications when current version is installed\n- chore: auto increment versionCode only when versionName changes"
+    "desc": "## TorrServe MatriX.147.Client\n\n### Thay đổi:\n- feat: add APK auto-update functionality with GitHub release integration and UI fragments\n- chore: update release metadata and description for MatriX.147.Client\n- feat: add ServerUpdateFragment and UpdaterServer for managing TorrServer updates\n- chore: release MatriX.147.Client and add app build.gradle configuration\n- chore: release version MatriX.146.2.Client and add build configuration"
   },
   {
     "version": "MatriX.146.2.Client",
