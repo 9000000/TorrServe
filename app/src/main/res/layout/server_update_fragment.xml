@@ -198,6 +198,13 @@
                 tools:visibility="visible" />
 
             <Button
+                android:id="@+id/btnRefresh"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/refresh_update" />
+
+            <Button
                 android:id="@+id/btnChangeRepo"
                 style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                 android:layout_width="match_parent"

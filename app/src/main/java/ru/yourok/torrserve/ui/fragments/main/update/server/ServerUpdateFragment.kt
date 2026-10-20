@@ -72,6 +72,11 @@ class ServerUpdateFragment : TSFragment() {
             showChangeRepoDialog()
         }
 
+        vi.findViewById<Button>(R.id.btnRefresh)?.setOnClickListener {
+            view?.findViewById<TextView>(R.id.tvRemoteVersion)?.text = getString(R.string.loading_torrent)
+            updateUI(force = true)
+        }
+
         vi.findViewById<Button>(R.id.btnSelectVersion)?.setOnClickListener {
             showSelectVersionDialog()
         }
@@ -160,8 +165,7 @@ class ServerUpdateFragment : TSFragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        Thread.sleep(500)
-        updateUI()
+        updateUI(force = true)
     }
 
     override fun onStop() {
@@ -171,7 +175,7 @@ class ServerUpdateFragment : TSFragment() {
         super.onStop()
     }
 
-    private fun updateUI() {
+    private fun updateUI(force: Boolean = true) {
         lifecycleScope.launch(Dispatchers.IO) {
             val arch = UpdaterServer.getArch()
             val localVer = UpdaterServer.getLocalVersion()
@@ -180,12 +184,22 @@ class ServerUpdateFragment : TSFragment() {
                 view?.findViewById<TextView>(R.id.tvArch)?.text = arch
                 view?.findViewById<TextView>(R.id.tvLocalVersion)?.text = localVer
                 view?.findViewById<TextView>(R.id.tvServerRepo)?.text = currentRepo
+                if (force && (view?.findViewById<TextView>(R.id.tvRemoteVersion)?.text.isNullOrBlank() ||
+                        view?.findViewById<TextView>(R.id.tvRemoteVersion)?.text == getString(R.string.no_updates))) {
+                    view?.findViewById<TextView>(R.id.tvRemoteVersion)?.text = getString(R.string.loading_torrent)
+                }
             }
-            UpdaterServer.check()
+            UpdaterServer.check(force = force)
             val remoteVer = UpdaterServer.getRemoteVersion()
             val avail = UpdaterServer.getAvailableVersions()
+            val curVer = UpdaterServer.getVersion()?.version ?: ""
             withContext(Dispatchers.Main) {
-                view?.findViewById<TextView>(R.id.tvRemoteVersion)?.text = remoteVer
+                val displayVer = if (remoteVer == getString(R.string.no_updates) && curVer.isNotEmpty()) {
+                    "$curVer (${getString(R.string.no_updates)})"
+                } else {
+                    remoteVer
+                }
+                view?.findViewById<TextView>(R.id.tvRemoteVersion)?.text = displayVer
                 view?.findViewById<Button>(R.id.btnSelectVersion)?.visibility =
                     if (avail.size > 1) View.VISIBLE else View.GONE
             }
@@ -193,6 +207,47 @@ class ServerUpdateFragment : TSFragment() {
     }
 
     private fun showChangeRepoDialog() {
+        val ctx = context ?: return
+        val currentRepo = Settings.getTorrServerRepo()
+        val gitSource = UpdaterServer.parseGitSource(currentRepo)
+        val baseRepo = "${gitSource.owner}/${gitSource.repo}"
+
+        val options = mutableListOf<String>()
+        val values = mutableListOf<String>()
+
+        val currentBranch = gitSource.branch.ifEmpty { "tet" }
+
+        val bTet = "$baseRepo@tet"
+        val bTetLabel = if (currentBranch.equals("tet", true)) "$bTet ✓ (Nhánh tet - Beta / Mới nhất)" else "$bTet (Nhánh tet - Beta / Mới nhất)"
+        options.add(bTetLabel)
+        values.add(bTet)
+
+        val bMaster = "$baseRepo@master"
+        val bMasterLabel = if (currentBranch.equals("master", true)) "$bMaster ✓ (Nhánh master - Stable / Chính thức)" else "$bMaster (Nhánh master - Stable / Chính thức)"
+        options.add(bMasterLabel)
+        values.add(bMaster)
+
+        options.add(getString(R.string.custom_repo_entry))
+        values.add("CUSTOM")
+
+        AlertDialog.Builder(ctx)
+            .setTitle(R.string.server_repo_dialog_title)
+            .setItems(options.toTypedArray()) { _, which ->
+                val chosen = values[which]
+                if (chosen == "CUSTOM") {
+                    showCustomRepoInputDialog()
+                } else {
+                    applyNewRepo(chosen)
+                }
+            }
+            .setNeutralButton(R.string.default_repo) { _, _ ->
+                applyNewRepo(Settings.DEFAULT_TORRSERVER_REPO)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showCustomRepoInputDialog() {
         val ctx = context ?: return
         val currentRepo = Settings.getTorrServerRepo()
         val input = AppCompatEditText(ctx).apply {
@@ -230,16 +285,22 @@ class ServerUpdateFragment : TSFragment() {
         view?.findViewById<TextView>(R.id.tvRemoteVersion)?.text = getString(R.string.loading_torrent)
         lifecycleScope.launch(Dispatchers.IO) {
             showProgress()
-            val success = UpdaterServer.check()
+            val success = UpdaterServer.check(force = true)
             val remoteVer = UpdaterServer.getRemoteVersion()
             val avail = UpdaterServer.getAvailableVersions()
+            val curVer = UpdaterServer.getVersion()?.version ?: ""
             withContext(Dispatchers.Main) {
-                view?.findViewById<TextView>(R.id.tvRemoteVersion)?.text = remoteVer
+                val displayVer = if (remoteVer == getString(R.string.no_updates) && curVer.isNotEmpty()) {
+                    "$curVer (${getString(R.string.no_updates)})"
+                } else {
+                    remoteVer
+                }
+                view?.findViewById<TextView>(R.id.tvRemoteVersion)?.text = displayVer
                 view?.findViewById<Button>(R.id.btnSelectVersion)?.visibility =
                     if (avail.size > 1) View.VISIBLE else View.GONE
                 hideProgress()
                 if (success) {
-                    App.toast("${getString(R.string.update_server)}: $remoteVer")
+                    App.toast("${getString(R.string.update_server)}: $displayVer")
                 } else {
                     App.toast(R.string.warn_error_check_ver, true)
                 }

@@ -29,6 +29,7 @@ object UpdaterServer {
     private var version: ServVersion? = null
     private var availableVersions: List<ServVersion> = emptyList()
     private var lastCheckedRepo: String = ""
+    private var lastCheckTime: Long = 0L
     private var error: String = ""
     private val serverFile = ServerFile()
 
@@ -36,6 +37,7 @@ object UpdaterServer {
         version = null
         availableVersions = emptyList()
         lastCheckedRepo = ""
+        lastCheckTime = 0L
         error = ""
     }
 
@@ -288,7 +290,45 @@ object UpdaterServer {
         }
     }
 
-    private fun fetchFromGitHubReleasesApi(owner: String, repo: String): List<ServVersion> {
+    private fun cleanVersion(v: String): String {
+        var s = v.trim()
+        val prefixes = listOf("TorrServer-LT-", "TorrServer-", "torrserver-lt-", "torrserver-", "TorrServer ", "torrserver ", "v", "V")
+        for (p in prefixes) {
+            if (s.startsWith(p)) {
+                s = s.substring(p.length)
+                break
+            }
+        }
+        if (s.contains("(")) {
+            s = s.substringBefore("(").trim()
+        }
+        return s.trim()
+    }
+
+    fun fetchAvailableBranches(owner: String, repo: String): List<String> {
+        val branchUrls = listOf(
+            "https://api.github.com/repos/$owner/$repo/branches",
+            "https://ghproxy.net/https://api.github.com/repos/$owner/$repo/branches"
+        )
+        val gson = Gson()
+        for (url in branchUrls) {
+            try {
+                val body = Net.get(url, 5000).trim()
+                if (body.startsWith("[")) {
+                    val arr = gson.fromJson(body, com.google.gson.JsonArray::class.java)
+                    val names = mutableListOf<String>()
+                    for (el in arr) {
+                        val name = el.asJsonObject.get("name")?.asString ?: ""
+                        if (name.isNotEmpty()) names.add(name)
+                    }
+                    if (names.isNotEmpty()) return names
+                }
+            } catch (_: Exception) {}
+        }
+        return emptyList()
+    }
+
+    private fun fetchFromGitHubReleasesApi(owner: String, repo: String, branch: String = ""): List<ServVersion> {
         val gson = Gson()
         val apiUrls = listOf(
             "https://api.github.com/repos/$owner/$repo/releases",
@@ -306,10 +346,12 @@ object UpdaterServer {
                 if (body.startsWith("[")) {
                     val releases = gson.fromJson(body, com.google.gson.JsonArray::class.java)
                     if (releases != null && releases.size() > 0) {
-                        val parsedList = mutableListOf<ServVersion>()
+                        val allList = mutableListOf<ServVersion>()
+                        val branchList = mutableListOf<ServVersion>()
                         for (element in releases) {
                             val relObj = element.asJsonObject
                             val tagName = relObj.get("tag_name")?.asString ?: relObj.get("name")?.asString ?: ""
+                            val target = relObj.get("target_commitish")?.asString ?: ""
                             val assets = relObj.getAsJsonArray("assets")
                             if (tagName.isNotEmpty() && assets != null) {
                                 val links = mutableMapOf<String, String>()
@@ -320,12 +362,19 @@ object UpdaterServer {
                                     addAssetToLinks(links, name, downloadUrl)
                                 }
                                 if (links.isNotEmpty()) {
-                                    parsedList.add(ServVersion(tagName, links))
+                                    val sv = ServVersion(tagName, links)
+                                    allList.add(sv)
+                                    if (branch.isNotEmpty() && (target.equals(branch, ignoreCase = true) || tagName.contains(branch, ignoreCase = true))) {
+                                        branchList.add(sv)
+                                    }
                                 }
                             }
                         }
-                        if (parsedList.isNotEmpty()) {
-                            return parsedList
+                        if (branchList.isNotEmpty()) {
+                            return branchList
+                        }
+                        if (allList.isNotEmpty()) {
+                            return allList
                         }
                     }
                 } else if (body.startsWith("{")) {
@@ -421,67 +470,97 @@ object UpdaterServer {
         return emptyList()
     }
 
-    fun check(): Boolean {
+    fun check(force: Boolean = false): Boolean {
         val currentRepo = Settings.getTorrServerRepo()
-        if (version != null && currentRepo == lastCheckedRepo) {
+        val now = System.currentTimeMillis()
+        if (!force && version != null && currentRepo == lastCheckedRepo && (now - lastCheckTime < 60_000)) {
             return true
         }
 
         val gitSource = parseGitSource(currentRepo)
         val owner = gitSource.owner
         val repo = gitSource.repo
-        val branch = gitSource.branch
-
-        // Step 1: Check GitHub Releases API (primary source for real releases)
-        val apiVersions = fetchFromGitHubReleasesApi(owner, repo)
-        if (apiVersions.isNotEmpty()) {
-            availableVersions = apiVersions
-            version = apiVersions[0]
-            lastCheckedRepo = currentRepo
-            return true
-        }
-
-        // Step 2: Fallback to GitHub Releases Web HTML scraping (bypasses GitHub API rate limits 403)
-        val webVersions = fetchFromGitHubReleasesWeb(owner, repo)
-        if (webVersions.isNotEmpty()) {
-            availableVersions = webVersions
-            version = webVersions[0]
-            lastCheckedRepo = currentRepo
-            return true
-        }
-
-        // Step 3: Fallback to release.json only as last resort (e.g. self-hosted or legacy mirrors)
-        // Explicitly filter out stale 1.1.77 placeholder
-        val candidateRawUrls = mutableListOf<String>()
-        if (branch.isNotEmpty()) {
-            candidateRawUrls.add("https://raw.githubusercontent.com/$owner/$repo/$branch/release.json")
-            candidateRawUrls.add("https://cdn.jsdelivr.net/gh/$owner/$repo@$branch/release.json")
-        }
-        val commonBranches = listOf("master", "main", "tet")
-        for (b in commonBranches) {
-            if (!b.equals(branch, ignoreCase = true)) {
-                candidateRawUrls.add("https://raw.githubusercontent.com/$owner/$repo/$b/release.json")
-                candidateRawUrls.add("https://cdn.jsdelivr.net/gh/$owner/$repo@$b/release.json")
-            }
+        val branch = gitSource.branch.ifEmpty {
+            if (owner.equals("9000000", true) && repo.equals("TorrServer-LT", true)) "tet" else "master"
         }
 
         val gson = Gson()
-        for (url in candidateRawUrls) {
-            try {
-                val body = Net.get(url, 10000).trim()
-                if (body.isNotEmpty() && body.startsWith("{")) {
-                    val parsed = gson.fromJson(body, ServVersion::class.java)
-                    if (parsed != null && parsed.links.isNotEmpty()) {
-                        if (!parsed.version.equals("1.1.77", ignoreCase = true)) {
-                            version = parsed
-                            availableVersions = listOf(parsed)
-                            lastCheckedRepo = currentRepo
-                            return true
+        var branchVersion: ServVersion? = null
+
+        // Step 1: Check release.json directly on the chosen branch (primary manifest of the branch in git)
+        if (branch.isNotEmpty()) {
+            val candidateRawUrls = listOf(
+                "https://raw.githubusercontent.com/$owner/$repo/$branch/release.json?t=$now",
+                "https://ghproxy.net/https://raw.githubusercontent.com/$owner/$repo/$branch/release.json?t=$now",
+                "https://cdn.jsdelivr.net/gh/$owner/$repo@$branch/release.json"
+            )
+            for (url in candidateRawUrls) {
+                try {
+                    val body = Net.get(url, 10000).trim()
+                    if (body.isNotEmpty() && body.startsWith("{")) {
+                        val parsed = gson.fromJson(body, ServVersion::class.java)
+                        if (parsed != null && parsed.links.isNotEmpty()) {
+                            if (!parsed.version.equals("1.1.77", ignoreCase = true)) {
+                                branchVersion = parsed
+                                break
+                            }
                         }
                     }
+                } catch (_: Exception) {}
+            }
+        }
+
+        // Step 2: Fetch releases from GitHub Releases API (filtered by branch)
+        val apiVersions = fetchFromGitHubReleasesApi(owner, repo, branch)
+
+        // Step 3: Fallback to GitHub Releases Web HTML scraping if API returned empty
+        val webVersions = if (apiVersions.isEmpty()) fetchFromGitHubReleasesWeb(owner, repo) else emptyList()
+
+        // Combine branch manifest version and GitHub releases
+        val combinedVersions = mutableListOf<ServVersion>()
+        if (branchVersion != null) {
+            combinedVersions.add(branchVersion)
+        }
+        val pool = if (apiVersions.isNotEmpty()) apiVersions else webVersions
+        for (item in pool) {
+            if (branchVersion == null || !cleanVersion(item.version).equals(cleanVersion(branchVersion.version), ignoreCase = true)) {
+                combinedVersions.add(item)
+            }
+        }
+
+        if (combinedVersions.isNotEmpty()) {
+            availableVersions = combinedVersions
+            version = combinedVersions[0]
+            lastCheckedRepo = currentRepo
+            lastCheckTime = now
+            return true
+        }
+
+        // Step 4: Fallback to common branches (master, main, tet) release.json only as last resort
+        val commonBranches = listOf("master", "main", "tet")
+        for (b in commonBranches) {
+            if (!b.equals(branch, ignoreCase = true)) {
+                val candidateUrls = listOf(
+                    "https://raw.githubusercontent.com/$owner/$repo/$b/release.json?t=$now",
+                    "https://cdn.jsdelivr.net/gh/$owner/$repo@$b/release.json"
+                )
+                for (url in candidateUrls) {
+                    try {
+                        val body = Net.get(url, 10000).trim()
+                        if (body.isNotEmpty() && body.startsWith("{")) {
+                            val parsed = gson.fromJson(body, ServVersion::class.java)
+                            if (parsed != null && parsed.links.isNotEmpty()) {
+                                if (!parsed.version.equals("1.1.77", ignoreCase = true)) {
+                                    version = parsed
+                                    availableVersions = listOf(parsed)
+                                    lastCheckedRepo = currentRepo
+                                    lastCheckTime = now
+                                    return true
+                                }
+                            }
+                        }
+                    } catch (_: Exception) {}
                 }
-            } catch (_: Exception) {
-                // Try next mirror
             }
         }
 
@@ -548,26 +627,10 @@ object UpdaterServer {
 
     fun isSameServerVersion(remoteVer: String, localVer: String): Boolean {
         if (remoteVer.isBlank() || localVer.isBlank()) return false
-        fun clean(v: String): String {
-            var s = v.trim()
-            val prefixes = listOf("TorrServer-LT-", "TorrServer-", "torrserver-lt-", "torrserver-", "TorrServer ", "torrserver ", "v", "V")
-            for (p in prefixes) {
-                if (s.startsWith(p)) {
-                    s = s.substring(p.length)
-                    break
-                }
-            }
-            return s.trim()
-        }
-        val r = clean(remoteVer)
-        val l = clean(localVer)
+        val r = cleanVersion(remoteVer)
+        val l = cleanVersion(localVer)
         if (r.isEmpty() || l.isEmpty()) return false
-        if (r.equals(l, ignoreCase = true)) return true
-
-        // Nếu local và remote trùng nhau phần phiên bản chính (vd MatriX.146 và MatriX.146.3)
-        if (r.startsWith(l, ignoreCase = true) || l.startsWith(r, ignoreCase = true)) return true
-
-        return false
+        return r.equals(l, ignoreCase = true)
     }
 
     fun getRemoteVersion(): String {
@@ -580,7 +643,7 @@ object UpdaterServer {
             }
             version?.let {
                 val local = lv.await().trim()
-                if (local.isNotEmpty() && !isSameServerVersion(it.version, local))
+                if (local.isEmpty() || !isSameServerVersion(it.version, local))
                     rv = it.version
             }
         }

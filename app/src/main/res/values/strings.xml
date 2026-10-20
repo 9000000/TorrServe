@@ -162,6 +162,8 @@
     <string name="change_server_repo">Change Git repository</string>
     <string name="server_repo_dialog_title">TorrServer Git repository</string>
     <string name="server_repo_dialog_hint">e.g. 9000000/TorrServer or 9000000/TorrServer-LT@tet</string>
+    <string name="custom_repo_entry">Custom repository / branch…</string>
+    <string name="refresh_update">Check for updates</string>
     <string name="btn_select_version">Select version…</string>
     <string name="select_version_title">Select version to install</string>
     <string name="default_repo">Default</string>

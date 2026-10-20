@@ -139,6 +139,8 @@
     <string name="change_server_repo">Сменить репозиторий Git</string>
     <string name="server_repo_dialog_title">Репозиторий TorrServer Git</string>
     <string name="server_repo_dialog_hint">напр. 9000000/TorrServer или 9000000/TorrServer-LT@tet</string>
+    <string name="custom_repo_entry">Другой репозиторий / ветка…</string>
+    <string name="refresh_update">Проверить обновления</string>
     <string name="btn_select_version">Выбрать версию…</string>
     <string name="select_version_title">Выберите версию для установки</string>
     <string name="default_repo">По умолчанию</string>
