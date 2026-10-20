@@ -298,10 +298,22 @@ class MainActivity : AppCompatActivity() {
 
     private fun checkUpdate() {
         lifecycleScope.launch(Dispatchers.IO) {
-            if (UpdaterApk.check())
+            if (UpdaterApk.check()) {
                 withContext(Dispatchers.Main) {
                     App.toast(R.string.found_new_app_update, true)
+                    if (!isFinishing && !isDestroyed) {
+                        val verName = UpdaterApk.getVersion()
+                        androidx.appcompat.app.AlertDialog.Builder(this@MainActivity)
+                            .setTitle(R.string.found_new_app_update)
+                            .setMessage("${getString(R.string.new_version)}: $verName\n${getString(R.string.current_version)}: ${BuildConfig.VERSION_NAME}")
+                            .setPositiveButton(R.string.update) { _, _ ->
+                                ApkUpdateFragment().show(this@MainActivity, R.id.container, true)
+                            }
+                            .setNegativeButton(android.R.string.cancel, null)
+                            .show()
+                    }
                 }
+            }
         }
         lifecycleScope.launch(Dispatchers.IO) {
             UpdaterServer.check()

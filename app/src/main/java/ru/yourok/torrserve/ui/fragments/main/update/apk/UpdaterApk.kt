@@ -20,24 +20,51 @@ object UpdaterApk {
     private var versions: ApkVersions? = null
     private var newVersion: ApkVersion? = null
 
-    private fun extractVersionCode(versionStr: String?): Int {
-        if (versionStr.isNullOrBlank()) return 0
+    private fun parseVersionParts(versionStr: String?): List<Int> {
+        if (versionStr.isNullOrBlank()) return emptyList()
         val regex = Regex("\\d+")
-        val match = regex.find(versionStr)
-        return match?.value?.toIntOrNull() ?: 0
+        return regex.findAll(versionStr).mapNotNull { it.value.toIntOrNull() }.toList()
     }
 
-    private fun isNewerVersion(remoteVersion: String, remoteCode: Int): Boolean {
+    private fun compareVersions(v1: String, v2: String): Int {
+        val p1 = parseVersionParts(v1)
+        val p2 = parseVersionParts(v2)
+        val maxLen = maxOf(p1.size, p2.size)
+        for (i in 0 until maxLen) {
+            val num1 = if (i < p1.size) p1[i] else 0
+            val num2 = if (i < p2.size) p2[i] else 0
+            if (num1 != num2) {
+                return num1.compareTo(num2)
+            }
+        }
+        return 0
+    }
+
+    private fun extractVersionCode(versionStr: String?): Int {
+        if (versionStr.isNullOrBlank()) return 0
+        val parts = parseVersionParts(versionStr)
+        return parts.firstOrNull() ?: 0
+    }
+
+    fun isNewerVersion(remoteVersion: String, remoteCode: Int): Boolean {
         val currentName = BuildConfig.VERSION_NAME.trim()
         val currentCode = BuildConfig.VERSION_CODE
         val rName = remoteVersion.trim()
 
-        // Nếu trùng versionName (ví dụ máy đã cài MatriX.146.1.Client) -> Chắc chắn không có cập nhật
+        // Nếu trùng versionName hoàn toàn -> chỉ coi là mới nếu remoteCode lớn hơn currentCode (vd build hotfix)
         if (rName.equals(currentName, ignoreCase = true)) {
+            return remoteCode > currentCode
+        }
+
+        // So sánh theo thứ tự semantic version (vd MatriX.147.Client > MatriX.146.2.Client)
+        val cmp = compareVersions(rName, currentName)
+        if (cmp > 0) {
+            return true
+        } else if (cmp < 0) {
             return false
         }
 
-        // Nếu remoteCode lớn hơn currentCode và tên phiên bản khác nhau
+        // Nếu chuỗi version tương đương, so sánh theo versionCode
         if (remoteCode > currentCode) {
             return true
         }
@@ -46,6 +73,7 @@ object UpdaterApk {
     }
 
     fun check(): Boolean {
+        newVersion = null
         val urls = listOf(
             Consts.UPDATE_APK_PATH,
             Consts.UPDATE_APK_PATH_CDN,
@@ -53,23 +81,32 @@ object UpdaterApk {
             Consts.UPDATE_APK_PATH_FALLBACK_CDN
         )
         val gson = Gson()
+        val now = System.currentTimeMillis()
+
         for (url in urls) {
             try {
-                val body = Net.get(url, 15000).trim()
+                val queryUrl = if (url.contains("?")) "$url&t=$now" else "$url?t=$now"
+                val body = Net.get(queryUrl, 15000).trim()
                 if (body.isEmpty()) continue
 
                 if (body.startsWith("[")) {
                     val list = gson.fromJson(body, ApkVersions::class.java)
                     if (!list.isNullOrEmpty()) {
                         versions = list
+                        var found = false
                         for (ver in list) {
                             val code = if (ver.versionInt > 0) ver.versionInt else extractVersionCode(ver.version)
                             if (isNewerVersion(ver.version, code)) {
                                 newVersion = ver.copy(versionInt = code)
-                                return true
+                                found = true
+                                break
                             }
                         }
-                        return false
+                        if (found) {
+                            return true
+                        }
+                        // Nếu trong list tĩnh chưa có bản mới hơn, tiếp tục kiểm tra GitHub Releases API bên dưới
+                        break
                     }
                 } else if (body.startsWith("{")) {
                     val single = gson.fromJson(body, ApkVersion::class.java)
@@ -81,15 +118,15 @@ object UpdaterApk {
                             newVersion = single.copy(versionInt = code)
                             return true
                         }
-                        return false
+                        break
                     }
                 }
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 // Try next mirror
             }
         }
 
-        // Fallback: GitHub Releases API
+        // Fallback: GitHub Releases API (nguồn chính xác tức thì khi phát hành bản mới)
         try {
             val apiUrl = "https://api.github.com/repos/9000000/TorrServe/releases"
             val body = Net.get(apiUrl, 15000).trim()
@@ -118,14 +155,15 @@ object UpdaterApk {
                     }
                 }
                 if (list.isNotEmpty()) {
-                    versions = list
+                    if (versions == null || versions?.isEmpty() == true) {
+                        versions = list
+                    }
                     for (ver in list) {
                         if (isNewerVersion(ver.version, ver.versionInt)) {
                             newVersion = ver
                             return true
                         }
                     }
-                    return false
                 }
             }
         } catch (_: Exception) {
@@ -144,7 +182,7 @@ object UpdaterApk {
         var ret = ""
 
         versions?.forEach { ver ->
-            if (ver.versionInt > BuildConfig.VERSION_CODE) {
+            if (isNewerVersion(ver.version, ver.versionInt)) {
                 ret += "<font color='white'><b>${ver.version}</b></font><br/><br/>"
                 ret += "<i>${ver.desc.replace("\n", "<br/>")}</i><br/><br/><br/>"
             } else {

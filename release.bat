@@ -254,8 +254,8 @@ def update_release_metadata_files(version_name: str, version_code: int, tag: str
         except Exception:
             apk_list = []
 
-    # Remove existing entry if same version/versionCode
-    apk_list = [item for item in apk_list if item.get("version") != version_name and item.get("versionInt") != version_code]
+    # Remove existing entry if same version
+    apk_list = [item for item in apk_list if item.get("version") != version_name]
 
     new_apk_item = {
         "version": version_name,
