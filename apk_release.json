@@ -1,5 +1,11 @@
 [
   {
+    "version": "MatriX.150.Client",
+    "versionInt": 150,
+    "link": "https://github.com/9000000/TorrServe/releases/download/MatriX.150.Client/TorrServe_MatriX.150.Client-release.apk",
+    "desc": "## TorrServe MatriX.150.Client\n\n### Thay đổi:\n- feat: implement APK updater and server update fragment\n- chore: update release metadata and description in release configurations\n- feat: add APK auto-update functionality with GitHub release integration and UI fragments\n- chore: update release metadata and description for MatriX.147.Client\n- feat: add ServerUpdateFragment and UpdaterServer for managing TorrServer updates"
+  },
+  {
     "version": "MatriX.147.Client",
     "versionInt": 149,
     "link": "https://github.com/9000000/TorrServe/releases/download/MatriX.147.Client/TorrServe_MatriX.147.Client-release.apk",
