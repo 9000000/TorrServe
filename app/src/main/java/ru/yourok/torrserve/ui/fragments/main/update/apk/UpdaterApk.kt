@@ -92,18 +92,19 @@ object UpdaterApk {
                 if (body.startsWith("[")) {
                     val list = gson.fromJson(body, ApkVersions::class.java)
                     if (!list.isNullOrEmpty()) {
-                        versions = list
-                        var found = false
-                        for (ver in list) {
+                        val sorted = list.sortedWith { a, b ->
+                            val codeA = if (a.versionInt > 0) a.versionInt else extractVersionCode(a.version)
+                            val codeB = if (b.versionInt > 0) b.versionInt else extractVersionCode(b.version)
+                            val cmp = compareVersions(b.version, a.version)
+                            if (cmp != 0) cmp else codeB.compareTo(codeA)
+                        }
+                        versions = ApkVersions().apply { addAll(sorted) }
+                        for (ver in sorted) {
                             val code = if (ver.versionInt > 0) ver.versionInt else extractVersionCode(ver.version)
                             if (isNewerVersion(ver.version, code)) {
                                 newVersion = ver.copy(versionInt = code)
-                                found = true
-                                break
+                                return true
                             }
-                        }
-                        if (found) {
-                            return true
                         }
                         // Nếu trong list tĩnh chưa có bản mới hơn, tiếp tục kiểm tra GitHub Releases API bên dưới
                         break
@@ -155,10 +156,14 @@ object UpdaterApk {
                     }
                 }
                 if (list.isNotEmpty()) {
-                    if (versions == null || versions?.isEmpty() == true) {
-                        versions = list
+                    val sorted = list.sortedWith { a, b ->
+                        val cmp = compareVersions(b.version, a.version)
+                        if (cmp != 0) cmp else b.versionInt.compareTo(a.versionInt)
                     }
-                    for (ver in list) {
+                    if (versions == null || versions?.isEmpty() == true) {
+                        versions = ApkVersions().apply { addAll(sorted) }
+                    }
+                    for (ver in sorted) {
                         if (isNewerVersion(ver.version, ver.versionInt)) {
                             newVersion = ver
                             return true

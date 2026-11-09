@@ -290,7 +290,7 @@ object UpdaterServer {
         }
     }
 
-    private fun cleanVersion(v: String): String {
+    fun cleanVersion(v: String): String {
         var s = v.trim()
         val prefixes = listOf("TorrServer-LT-", "TorrServer-", "torrserver-lt-", "torrserver-", "TorrServer ", "torrserver ", "v", "V")
         for (p in prefixes) {
@@ -303,6 +303,79 @@ object UpdaterServer {
             s = s.substringBefore("(").trim()
         }
         return s.trim()
+    }
+
+    fun parseVersionParts(versionStr: String?): List<Int> {
+        if (versionStr.isNullOrBlank()) return emptyList()
+        val regex = Regex("\\d+")
+        return regex.findAll(versionStr).mapNotNull { it.value.toIntOrNull() }.toList()
+    }
+
+    fun compareVersions(v1: String, v2: String): Int {
+        val p1 = parseVersionParts(v1)
+        val p2 = parseVersionParts(v2)
+        val maxLen = maxOf(p1.size, p2.size)
+        for (i in 0 until maxLen) {
+            val num1 = if (i < p1.size) p1[i] else 0
+            val num2 = if (i < p2.size) p2[i] else 0
+            if (num1 != num2) {
+                return num1.compareTo(num2)
+            }
+        }
+        return cleanVersion(v1).compareTo(cleanVersion(v2), ignoreCase = true)
+    }
+
+    fun hasLinkForCurrentArch(ver: ServVersion): Boolean {
+        val arch = getArch()
+        if (arch.isEmpty()) return false
+        val isOldAndroid = Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP
+        val primaryPrefix = if (isOldAndroid) "linux" else "android"
+        val fallbackPrefix = if (isOldAndroid) "android" else "linux"
+
+        val keyCandidates = mutableListOf<String>()
+        fun addArchKeys(prefix: String) {
+            when (arch) {
+                "armv7", "arm7", "arm" -> {
+                    keyCandidates.add("$prefix-armv7")
+                    keyCandidates.add("$prefix-arm7")
+                    keyCandidates.add("$prefix-arm")
+                    keyCandidates.add("$prefix-armeabi-v7a")
+                }
+                "arm64" -> {
+                    keyCandidates.add("$prefix-arm64")
+                    keyCandidates.add("$prefix-arm64-v8a")
+                    keyCandidates.add("$prefix-aarch64")
+                }
+                "amd64" -> {
+                    keyCandidates.add("$prefix-amd64")
+                    keyCandidates.add("$prefix-x86_64")
+                }
+                "386" -> {
+                    keyCandidates.add("$prefix-386")
+                    keyCandidates.add("$prefix-x86")
+                }
+                else -> keyCandidates.add("$prefix-$arch")
+            }
+        }
+        addArchKeys(primaryPrefix)
+        addArchKeys(fallbackPrefix)
+
+        for (k in keyCandidates) {
+            if (!ver.links[k].isNullOrBlank()) return true
+            if (ver.links.entries.any { it.key.equals(k, ignoreCase = true) && it.value.isNotBlank() }) return true
+        }
+        val bareKeys = when (arch) {
+            "armv7", "arm7", "arm" -> listOf("armv7", "arm7", "arm", "armeabi-v7a")
+            "arm64" -> listOf("arm64", "arm64-v8a", "aarch64")
+            "amd64" -> listOf("amd64", "x86_64", "x64")
+            "386" -> listOf("386", "x86")
+            else -> listOf(arch)
+        }
+        for (k in bareKeys) {
+            if (!ver.links[k].isNullOrBlank()) return true
+            if (ver.links.entries.any { it.key.equals(k, ignoreCase = true) && it.value.isNotBlank() }) return true
+        }
+        return false
     }
 
     fun fetchAvailableBranches(owner: String, repo: String): List<String> {
@@ -517,20 +590,36 @@ object UpdaterServer {
         val webVersions = if (apiVersions.isEmpty()) fetchFromGitHubReleasesWeb(owner, repo) else emptyList()
 
         // Combine branch manifest version and GitHub releases
-        val combinedVersions = mutableListOf<ServVersion>()
-        if (branchVersion != null) {
-            combinedVersions.add(branchVersion)
-        }
-        val pool = if (apiVersions.isNotEmpty()) apiVersions else webVersions
-        for (item in pool) {
-            if (branchVersion == null || !cleanVersion(item.version).equals(cleanVersion(branchVersion.version), ignoreCase = true)) {
-                combinedVersions.add(item)
+        val versionsMap = LinkedHashMap<String, ServVersion>()
+
+        fun addOrMerge(v: ServVersion) {
+            val key = cleanVersion(v.version).lowercase()
+            val existing = versionsMap[key]
+            if (existing == null) {
+                versionsMap[key] = v
+            } else {
+                val mergedLinks = existing.links.toMutableMap()
+                mergedLinks.putAll(v.links)
+                val preferredVersion = if (v.version.length > existing.version.length) v.version else existing.version
+                versionsMap[key] = ServVersion(preferredVersion, mergedLinks)
             }
         }
 
+        val pool = if (apiVersions.isNotEmpty()) apiVersions else webVersions
+        for (item in pool) {
+            addOrMerge(item)
+        }
+        if (branchVersion != null) {
+            addOrMerge(branchVersion)
+        }
+
+        val combinedVersions = versionsMap.values.toMutableList()
         if (combinedVersions.isNotEmpty()) {
+            // Sắp xếp các phiên bản từ mới nhất đến cũ nhất
+            combinedVersions.sortWith { a, b -> compareVersions(b.version, a.version) }
             availableVersions = combinedVersions
-            version = combinedVersions[0]
+            // Tự động chọn bản mới nhất (ưu tiên bản có binary cho kiến trúc hiện tại)
+            version = combinedVersions.firstOrNull { hasLinkForCurrentArch(it) } ?: combinedVersions[0]
             lastCheckedRepo = currentRepo
             lastCheckTime = now
             return true
@@ -630,25 +719,36 @@ object UpdaterServer {
         val r = cleanVersion(remoteVer)
         val l = cleanVersion(localVer)
         if (r.isEmpty() || l.isEmpty()) return false
-        return r.equals(l, ignoreCase = true)
+        if (r.equals(l, ignoreCase = true)) return true
+        return compareVersions(r, l) == 0
     }
 
-    fun getRemoteVersion(): String {
+    fun isNewerServerVersion(remoteVer: String, localVer: String): Boolean {
+        if (remoteVer.isBlank()) return false
+        if (localVer.isBlank() || localVer == App.context.getString(R.string.not_installed) || localVer == App.context.getString(R.string.not_used)) {
+            return true
+        }
+        if (isSameServerVersion(remoteVer, localVer)) return false
+        return compareVersions(remoteVer, localVer) > 0
+    }
+
+    fun getRemoteVersion(localVersion: String? = null): String {
         var rv = App.context.getString(R.string.no_updates)
         if (version == null)
             check()
-        runBlocking {
-            val lv: Deferred<String> = async(context = Dispatchers.IO) {
+        val targetVer = version ?: return App.context.getString(R.string.no_data)
+
+        val local = (localVersion ?: runBlocking {
+            withContext(Dispatchers.IO) {
                 getLocalVersion()
             }
-            version?.let {
-                val local = lv.await().trim()
-                if (local.isEmpty() || !isSameServerVersion(it.version, local))
-                    rv = it.version
-            }
+        }).trim()
+
+        if (isNewerServerVersion(targetVer.version, local)) {
+            rv = targetVer.version
+        } else {
+            rv = App.context.getString(R.string.no_updates)
         }
-        if (version == null)
-            rv = App.context.getString(R.string.no_data) // error
         return rv
     }
 

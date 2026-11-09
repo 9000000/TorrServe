@@ -190,7 +190,7 @@ class ServerUpdateFragment : TSFragment() {
                 }
             }
             UpdaterServer.check(force = force)
-            val remoteVer = UpdaterServer.getRemoteVersion()
+            val remoteVer = UpdaterServer.getRemoteVersion(localVer)
             val avail = UpdaterServer.getAvailableVersions()
             val curVer = UpdaterServer.getVersion()?.version ?: ""
             withContext(Dispatchers.Main) {
@@ -286,7 +286,8 @@ class ServerUpdateFragment : TSFragment() {
         lifecycleScope.launch(Dispatchers.IO) {
             showProgress()
             val success = UpdaterServer.check(force = true)
-            val remoteVer = UpdaterServer.getRemoteVersion()
+            val localVer = UpdaterServer.getLocalVersion()
+            val remoteVer = UpdaterServer.getRemoteVersion(localVer)
             val avail = UpdaterServer.getAvailableVersions()
             val curVer = UpdaterServer.getVersion()?.version ?: ""
             withContext(Dispatchers.Main) {
@@ -314,12 +315,30 @@ class ServerUpdateFragment : TSFragment() {
             App.toast(R.string.no_updates)
             return
         }
-        val names = list.map { it.version }
-        DialogList.show(requireContext(), getString(R.string.select_version_title), names) { chosenName, pos ->
+        val currentSelected = UpdaterServer.getVersion()?.version ?: ""
+        val localVer = view?.findViewById<TextView>(R.id.tvLocalVersion)?.text?.toString() ?: ""
+        val names = list.map { ver ->
+            val isCurrent = ver.version.equals(currentSelected, ignoreCase = true) ||
+                    UpdaterServer.isSameServerVersion(ver.version, currentSelected)
+            val isInstalled = localVer.isNotEmpty() && UpdaterServer.isSameServerVersion(ver.version, localVer)
+            when {
+                isCurrent && isInstalled -> "${ver.version} ✓ (${getString(R.string.current_version)})"
+                isCurrent -> "${ver.version} ✓"
+                isInstalled -> "${ver.version} (${getString(R.string.current_version)})"
+                else -> ver.version
+            }
+        }
+        DialogList.show(requireContext(), getString(R.string.select_version_title), names) { _, pos ->
             val chosenVer = list[pos]
             UpdaterServer.setVersion(chosenVer)
-            view?.findViewById<TextView>(R.id.tvRemoteVersion)?.text = chosenName
-            App.toast(chosenName)
+            val isInstalled = localVer.isNotEmpty() && UpdaterServer.isSameServerVersion(chosenVer.version, localVer)
+            val display = if (isInstalled) {
+                "${chosenVer.version} (${getString(R.string.no_updates)})"
+            } else {
+                chosenVer.version
+            }
+            view?.findViewById<TextView>(R.id.tvRemoteVersion)?.text = display
+            App.toast(chosenVer.version)
         }
     }
 
