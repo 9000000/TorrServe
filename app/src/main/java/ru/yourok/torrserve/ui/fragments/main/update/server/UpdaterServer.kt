@@ -2,6 +2,7 @@ package ru.yourok.torrserve.ui.fragments.main.update.server
 
 import android.net.Uri
 import android.os.Build
+import android.system.Os
 import androidx.annotation.RequiresApi
 import com.google.gson.Gson
 import kotlinx.coroutines.*
@@ -657,10 +658,76 @@ object UpdaterServer {
         return false
     }
 
+    private fun bundledFFProbeFile(): File? {
+        val dir = App.context.applicationInfo.nativeLibraryDir ?: return null
+        val lib = File(dir, "libffprobe.so")
+        return if (lib.exists() && lib.length() > 0) lib else null
+    }
+
+    private fun linkOrCopyBundledFFProbe(bundled: File, dest: File) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            try {
+                Os.remove(dest.absolutePath)
+            } catch (_: Exception) {
+                dest.delete()
+            }
+            try {
+                Os.symlink(bundled.absolutePath, dest.absolutePath)
+                return
+            } catch (_: Exception) {
+                // Fall back to copying if symlink is disallowed on a device.
+            }
+        }
+        dest.delete()
+        bundled.copyTo(dest, overwrite = true)
+        if (!dest.setExecutable(true)) {
+            dest.delete()
+            throw IOException("error set exec permission")
+        }
+    }
+
+    /**
+     * Keeps filesDir/ffprobe pointing to the bundled NDK libffprobe.so (Android 5.0+):
+     * auto-replaces stale symlinks after APK updates and old broken Linux ffbinaries.
+     */
+    fun refreshBundledFFProbe() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return
+        val bundled = bundledFFProbeFile() ?: return
+        val dest = File(App.context.filesDir, "ffprobe")
+        val hasEntry = dest.exists() || try {
+            Os.lstat(dest.absolutePath)
+            true
+        } catch (_: Exception) {
+            false
+        }
+        if (!hasEntry) return
+        val currentTarget = try {
+            Os.readlink(dest.absolutePath)
+        } catch (_: Exception) {
+            null
+        }
+        if (currentTarget == bundled.absolutePath) return
+        try {
+            linkOrCopyBundledFFProbe(bundled, dest)
+        } catch (_: Exception) {
+        }
+    }
+
     @RequiresApi(Build.VERSION_CODES.KITKAT)
     fun downloadFFProbe(onProgress: ((prc: Int) -> Unit)?) {
         val fileZip = File(App.context.filesDir, "ffprobe.zip")
         val file = File(App.context.filesDir, "ffprobe")
+
+        // Prefer the bundled Android NDK libffprobe.so (API 21+ -> latest, no SIGSYS).
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            val bundled = bundledFFProbeFile()
+            if (bundled != null) {
+                onProgress?.invoke(50)
+                linkOrCopyBundledFFProbe(bundled, file)
+                onProgress?.invoke(100)
+                return
+            }
+        }
 
         if (file.exists())
             return

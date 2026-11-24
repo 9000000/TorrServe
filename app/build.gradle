@@ -57,6 +57,9 @@ android {
     }
     packagingOptions {
         resources.excludes += "DebugProbesKt.bin"
+        jniLibs {
+            useLegacyPackaging = true
+        }
     }
     namespace 'ru.yourok.torrserve'
     buildFeatures {
